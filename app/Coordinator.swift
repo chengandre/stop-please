@@ -115,6 +115,19 @@ final class Coordinator {
         }
     }
 
+    /// The shortcut: Resume Selected while this app holds paused entries, otherwise
+    /// Pause All Playing. Refreshing first drops entries resumed or quit elsewhere,
+    /// so they do not turn a press meant to pause into a resume that does nothing.
+    func toggle() async {
+        guard !isBusy else { return }
+        await refresh()
+        if paused.isEmpty {
+            await pauseAll()
+        } else {
+            await resumeSelected()
+        }
+    }
+
     func setSelected(_ selected: Bool, for id: SourceID) {
         guard let index = paused.firstIndex(where: { $0.id == id }) else { return }
         paused[index].selected = selected
