@@ -11,7 +11,8 @@
 typedef void (*GetClientsFn)(dispatch_queue_t, void (^)(NSArray *clients, NSError *error));
 typedef void (*GetClientFn)(dispatch_queue_t, void (^)(id client, NSError *error));
 typedef id (*GetLocalOriginFn)(void);
-typedef id (*PathCreateFn)(id origin, id client, id player);
+// Returns +1 (objc_alloc + init, no autorelease); callers take ownership with CFBridgingRelease.
+typedef CFTypeRef (*PathCreateFn)(id origin, id client, id player);
 // The caller's completion receives only the state; daemon errors are logged internally.
 typedef void (*GetStateFn)(id path, dispatch_queue_t, void (^)(uint32_t state));
 typedef NSString *(*StateDescriptionFn)(uint32_t state);
@@ -134,7 +135,7 @@ static NSArray *pathsForClients(NSArray *clients) {
     id origin = MR.localOrigin();
     NSMutableArray *paths = [NSMutableArray array];
     // Same construction Control Center uses: local origin, client, nil player.
-    for (id client in clients) [paths addObject:MR.createPath(origin, client, nil)];
+    for (id client in clients) [paths addObject:CFBridgingRelease(MR.createPath(origin, client, nil))];
     return paths;
 }
 
