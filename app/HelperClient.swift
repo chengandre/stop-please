@@ -53,6 +53,13 @@ actor HelperClient {
         if case .stopped = state { launch() }
     }
 
+    /// Start a new helper after the route broke, e.g. from the menu's Retry.
+    func restart() {
+        guard case .broken = state else { return }
+        lastRestart = nil
+        launch()
+    }
+
     func list() async throws -> [Source] {
         try await send(Request(op: "list"), replying: ListReply.self).sources
     }

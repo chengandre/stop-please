@@ -1,19 +1,19 @@
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let helper = HelperClient(
-        script: Bundle.main.url(forResource: "perl_helper", withExtension: "pl")!,
-        library: Bundle.main.privateFrameworksURL!.appending(path: "libNowPlayingPerlHelper.dylib"))
-    private var statusItem: NSStatusItem!
+    private var menuBar: MenuBarController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "pause.circle", accessibilityDescription: "Pause Playing")
-
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        statusItem.menu = menu
-
+        // A second instance would run a second helper whose override windows could
+        // overlap with this one's.
+        if NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier!).count > 1 {
+            NSApp.terminate(nil)
+            return
+        }
+        let helper = HelperClient(
+            script: Bundle.main.url(forResource: "perl_helper", withExtension: "pl")!,
+            library: Bundle.main.privateFrameworksURL!.appending(path: "libNowPlayingPerlHelper.dylib"))
+        menuBar = MenuBarController(coordinator: Coordinator(helper: helper))
         Task { await helper.start() }
     }
 }
