@@ -1,4 +1,4 @@
-"""Run the original acceptance tests (HANDOVER.md Tests E, F, H) through the
+"""Run the acceptance tests (Tests E, F, H in docs/PERL_HELPER.md) through the
 Perl-hosted helper's override-send mode, against the three fixture apps.
 
 Every helper capture is saved under Outputs/ACCEPTANCE_<timestamp>/ with a
@@ -37,7 +37,7 @@ def helper(label, *arguments):
     global step_number
     step_number += 1
     completed = subprocess.run(
-        ["/usr/bin/perl", str(ROOT / "Scripts" / "perl_helper.pl"), str(LIBRARY), *arguments],
+        ["/usr/bin/perl", str(ROOT / "helper" / "perl_helper.pl"), str(LIBRARY), *arguments],
         capture_output=True, text=True, timeout=60,
     )
     (out_dir / f"{step_number:02d}_{label}.json").write_text(completed.stdout + completed.stderr)
@@ -74,7 +74,7 @@ def fixture_pids(snapshot):
 
 
 def command(test, name, action, pid):
-    """Send one override-send command and classify it (HANDOVER.md Test H classes)."""
+    """Send one override-send command and classify it (Test H classes)."""
     result = helper(f"{test}_{action}_{name.replace(' ', '')}", "override-send", action, str(pid))
     if "error" in result:
         outcome = f"command rejected: {result['error']}"
@@ -108,9 +108,10 @@ def expect_states(label, pids, expected):
     return ok
 
 
+LIBRARY.parent.mkdir(exist_ok=True)
 subprocess.run(
     ["xcrun", "clang", "-dynamiclib", "-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-framework", "AppKit",
-     str(ROOT / "Scripts" / "perl_helper.m"), "-o", str(LIBRARY)],
+     str(ROOT / "helper" / "perl_helper.m"), "-o", str(LIBRARY)],
     check=True,
 )
 log(f"Acceptance run {out_dir.name}")

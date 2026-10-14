@@ -6,7 +6,7 @@
 // helper tests whether that host process receives the full Now Playing list.
 //
 // Contracts below were read from the arm64e disassembly of the installed
-// MediaRemote on macOS 15.8 (24H23); see PERL_HELPER.md.
+// MediaRemote on macOS 15.8 (24H23); see docs/PERL_HELPER.md.
 typedef void (*GetClientsFn)(dispatch_queue_t, void (^)(NSArray *clients, NSError *error));
 typedef void (*GetClientFn)(dispatch_queue_t, void (^)(id client, NSError *error));
 typedef id (*GetLocalOriginFn)(void);
