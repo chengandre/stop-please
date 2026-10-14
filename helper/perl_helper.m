@@ -383,8 +383,14 @@ static NSDictionary *handleRequest(NSData *line) {
 /// One JSON request per stdin line, one JSON reply per stdout line, handled one at a
 /// time on this thread. Returns when stdin closes.
 static void runServe(void) {
-    // A crash inside an earlier helper's override window can leave the override set.
-    MR.setOverride(nil);
+    // A crash inside an earlier helper's override window leaves the override set, and a
+    // nil from this new process does not clear it (docs/PERL_HELPER.md). Setting and
+    // clearing it from one process does; the leftover target is the current client.
+    id current = nil;
+    if (currentClient(&current) && current) {
+        MR.setOverride(stringValue(current, @"bundleIdentifier"));
+        MR.setOverride(nil);
+    }
     emit(@{@"event": @"ready", @"protocol": @1,
            @"operatingSystem": NSProcessInfo.processInfo.operatingSystemVersionString});
     char *line = NULL;
