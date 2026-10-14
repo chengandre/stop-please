@@ -1,0 +1,51 @@
+# XcodeGen spec. Generate the Xcode project with `xcodegen generate`.
+name: PausePlaying
+options:
+  bundleIdPrefix: com.andrecheng
+  deploymentTarget:
+    macOS: "15.0"
+settings:
+  base:
+    ARCHS: arm64
+    # Ad-hoc signing for local builds; Developer ID comes with distribution.
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    ENABLE_HARDENED_RUNTIME: YES
+targets:
+  PausePlaying:
+    type: application
+    platform: macOS
+    sources:
+      - app
+      - path: helper/perl_helper.pl
+        buildPhase: resources
+    dependencies:
+      # Copied to Contents/Frameworks but not linked: only Perl loads it,
+      # by absolute path.
+      - target: NowPlayingPerlHelper
+        link: false
+        embed: true
+        codeSign: true
+        copy:
+          destination: frameworks
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        # The app must launch /usr/bin/perl.
+        ENABLE_APP_SANDBOX: NO
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+  NowPlayingPerlHelper:
+    type: library.dynamic
+    platform: macOS
+    sources:
+      - helper/perl_helper.m
+    dependencies:
+      - sdk: AppKit.framework
+    settings:
+      base:
+        EXECUTABLE_PREFIX: lib
+        CLANG_ENABLE_OBJC_ARC: YES
+        OTHER_CFLAGS: [-Wall, -Wextra]
