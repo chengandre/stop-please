@@ -39,11 +39,10 @@ static struct {
 
 static dispatch_queue_t replyQueue;
 
+/// Write one object as a single JSON line; serve-mode replies are newline-delimited.
 static void emit(NSDictionary *object) {
     NSError *error = nil;
-    NSData *data = [NSJSONSerialization dataWithJSONObject:object
-                                                   options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys
-                                                     error:&error];
+    NSData *data = [NSJSONSerialization dataWithJSONObject:object options:NSJSONWritingSortedKeys error:&error];
     if (!data) {
         fprintf(stderr, "Could not encode output: %s\n", error.description.UTF8String);
         exit(1);
@@ -53,9 +52,16 @@ static void emit(NSDictionary *object) {
     fflush(stdout);
 }
 
+/// One-shot modes only: report the error and end the process.
 __attribute__((noreturn)) static void fail(NSString *message) {
     emit(@{@"error": message});
     exit(1);
+}
+
+/// The error object of a failed serve reply, e.g.
+///     {"code": "timeout", "message": "MRMediaRemoteGetNowPlayingClients timed out"}
+static NSDictionary *replyError(NSString *code, NSString *message) {
+    return @{@"code": code, @"message": message};
 }
 
 static BOOL loadMediaRemote(void) {
@@ -76,14 +82,17 @@ static BOOL loadMediaRemote(void) {
 }
 
 /// Run one asynchronous MediaRemote request and wait for its reply.
-/// Returns NO on timeout; the late reply may still run, so the process exits soon after.
+/// Returns NO on timeout. The late reply may still run afterwards, which is safe in the
+/// long-running serve mode only while completion blocks write nothing but their own
+/// `__block` variables before calling `done`.
 static BOOL await(void (^request)(dispatch_block_t done)) {
     dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
     request(^{ dispatch_semaphore_signal(semaphore); });
     return dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, kTimeoutSeconds * NSEC_PER_SEC)) == 0;
 }
 
-static NSArray *nowPlayingClients(void) {
+/// Every Now Playing client, or nil with `*error` set to a reply error.
+static NSArray *nowPlayingClients(NSDictionary **error) {
     __block NSArray *clients = nil;
     __block NSError *clientsError = nil;
     BOOL replied = await(^(dispatch_block_t done) {
@@ -93,10 +102,15 @@ static NSArray *nowPlayingClients(void) {
             done();
         });
     });
-    if (!replied) fail(@"MRMediaRemoteGetNowPlayingClients timed out");
-    if (clientsError) fail([NSString stringWithFormat:@"MRMediaRemoteGetNowPlayingClients error: %@", clientsError]);
-    if (!clients) fail(@"MRMediaRemoteGetNowPlayingClients returned nil with nil error");
-    return clients;
+    if (!replied) {
+        *error = replyError(@"timeout", @"MRMediaRemoteGetNowPlayingClients timed out");
+    } else if (clientsError) {
+        *error = replyError(@"mediaRemoteError",
+                            [NSString stringWithFormat:@"MRMediaRemoteGetNowPlayingClients error: %@", clientsError]);
+    } else if (!clients) {
+        *error = replyError(@"mediaRemoteError", @"MRMediaRemoteGetNowPlayingClients returned nil with nil error");
+    }
+    return *error ? nil : clients;
 }
 
 static NSString *stringValue(id object, NSString *key) {
@@ -194,7 +208,9 @@ static NSArray *pathsForClients(NSArray *clients) {
 }
 
 static void runList(void) {
-    NSArray *clients = nowPlayingClients();
+    NSDictionary *error = nil;
+    NSArray *clients = nowPlayingClients(&error);
+    if (!clients) fail(error[@"message"]);
     NSMutableDictionary *output = [snapshot(clients, pathsForClients(clients)) mutableCopy];
     output[@"mode"] = @"list";
     output[@"clientCount"] = @(clients.count);
@@ -223,7 +239,9 @@ static void runSend(NSString *action, pid_t pid, BOOL override) {
                                         command, commandName, commands[action][1]]);
     }
 
-    NSArray *clients = nowPlayingClients();
+    NSDictionary *error = nil;
+    NSArray *clients = nowPlayingClients(&error);
+    if (!clients) fail(error[@"message"]);
     NSArray *paths = pathsForClients(clients);
     NSIndexSet *matches = [clients indexesOfObjectsPassingTest:^BOOL(id client, __unused NSUInteger index, __unused BOOL *stop) {
         return [[client valueForKey:@"processIdentifier"] intValue] == pid;
@@ -275,7 +293,8 @@ static void runSend(NSString *action, pid_t pid, BOOL override) {
     }
     // Commands apply asynchronously; allow the player and daemon to settle.
     [NSThread sleepForTimeInterval:1.5];
-    NSArray *afterClients = nowPlayingClients();
+    NSArray *afterClients = nowPlayingClients(&error);
+    if (!afterClients) fail(error[@"message"]);
     emit(@{
         @"mode": override ? @"override-send" : @"send",
         @"overrideBundleIdentifier": override ? overrideBundle : NSNull.null,
@@ -292,15 +311,96 @@ static void runSend(NSString *action, pid_t pid, BOOL override) {
     });
 }
 
+/// Serve reply body for {"op": "list"}: the protocol's compact view of a snapshot.
+/// `current` is null when no client is current. Identity is pid + clientBundle; the
+/// other fields are for display.
+///
+/// Example:
+///     {"current": {"pid": 1334, "clientBundle": "com.spotify.client"},
+///      "sources": [{"pid": 1332, "clientBundle": "Electron",
+///                   "appBundle": "com.github.th-ch.youtube-music", "appName": "YouTube Music",
+///                   "state": "Paused", "title": "..."}]}
+static NSDictionary *listReply(NSDictionary **error) {
+    NSArray *clients = nowPlayingClients(error);
+    if (!clients) return nil;
+    NSDictionary *full = snapshot(clients, pathsForClients(clients));
+    if ([full[@"currentClientPid"] isEqual:@"timeout"]) {
+        *error = replyError(@"timeout", @"MRMediaRemoteGetNowPlayingClient timed out");
+        return nil;
+    }
+    NSMutableArray *sources = [NSMutableArray array];
+    for (NSDictionary *source in full[@"sources"]) {
+        [sources addObject:@{
+            @"pid": source[@"pid"],
+            @"clientBundle": source[@"bundleIdentifier"],
+            @"appBundle": source[@"applicationBundleIdentifier"],
+            @"appName": source[@"applicationName"],
+            @"state": source[@"stateDescription"],
+            @"title": source[@"title"],
+        }];
+    }
+    id current = full[@"currentClientPid"] == NSNull.null
+        ? NSNull.null
+        : @{@"pid": full[@"currentClientPid"], @"clientBundle": full[@"currentClientBundleIdentifier"]};
+    return @{@"current": current, @"sources": sources};
+}
+
+/// Answer one request line. Every reply echoes the request's "id" (null if unreadable):
+///     {"id": 1, "ok": true, ...reply body}
+///     {"id": 1, "ok": false, "error": {"code": "badRequest", "message": "..."}}
+static NSDictionary *handleRequest(NSData *line) {
+    id request = [NSJSONSerialization JSONObjectWithData:line options:0 error:NULL];
+    if (![request isKindOfClass:NSDictionary.class]) {
+        return @{@"id": NSNull.null, @"ok": @NO, @"error": replyError(@"badRequest", @"Request must be a JSON object")};
+    }
+    id requestID = request[@"id"] ?: NSNull.null;
+    NSDictionary *error = nil;
+    NSDictionary *body = nil;
+    if ([request[@"op"] isEqual:@"list"]) {
+        body = listReply(&error);
+    } else {
+        error = replyError(@"badRequest", [NSString stringWithFormat:@"Unknown op %@", request[@"op"]]);
+    }
+    if (!body) return @{@"id": requestID, @"ok": @NO, @"error": error};
+    NSMutableDictionary *reply = [body mutableCopy];
+    reply[@"id"] = requestID;
+    reply[@"ok"] = @YES;
+    return reply;
+}
+
+/// Long-running mode: one JSON request per stdin line, one JSON reply per stdout line,
+/// handled one at a time on this thread. Returns when stdin closes.
+static void runServe(void) {
+    emit(@{@"event": @"ready", @"protocol": @1,
+           @"operatingSystem": NSProcessInfo.processInfo.operatingSystemVersionString});
+    char *line = NULL;
+    size_t capacity = 0;
+    ssize_t length;
+    while ((length = getline(&line, &capacity, stdin)) > 0) {
+        @autoreleasepool {
+            NSData *data = [NSData dataWithBytesNoCopy:line length:(NSUInteger)length freeWhenDone:NO];
+            emit(handleRequest(data));
+        }
+    }
+    free(line);
+}
+
 /// Installed as a Perl XSUB; the interpreter and CV arguments are unused.
 /// Perl passes the request in environment variables and this function exits the process.
 void npt_main(__unused void *interpreter, __unused void *cv) {
     @autoreleasepool {
         replyQueue = dispatch_queue_create("NowPlayingAPITest.perl-helper", DISPATCH_QUEUE_SERIAL);
-        if (!loadMediaRemote()) fail(@"Could not load MediaRemote or resolve a required symbol");
         NSDictionary<NSString *, NSString *> *environment = NSProcessInfo.processInfo.environment;
         NSString *mode = environment[@"NPT_MODE"];
-        if ([mode isEqualToString:@"list"]) {
+        if (!loadMediaRemote()) {
+            NSString *message = @"Could not load MediaRemote or resolve a required symbol";
+            if (![mode isEqualToString:@"serve"]) fail(message);
+            emit(@{@"event": @"fatal", @"error": replyError(@"mediaRemoteUnavailable", message)});
+            exit(1);
+        }
+        if ([mode isEqualToString:@"serve"]) {
+            runServe();
+        } else if ([mode isEqualToString:@"list"]) {
             runList();
         } else if (([mode isEqualToString:@"send"] || [mode isEqualToString:@"override-send"]) &&
                    environment[@"NPT_ACTION"] && environment[@"NPT_PID"].intValue > 0) {

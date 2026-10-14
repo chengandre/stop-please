@@ -8,10 +8,10 @@ use warnings;
 use DynaLoader;
 
 my ($library, $mode, @arguments) = @ARGV;
-my $usage = "Usage: perl_helper.pl LIBRARY list | send|override-send <play|pause|next> <pid>\n";
+my $usage = "Usage: perl_helper.pl LIBRARY serve | list | send|override-send <play|pause|next> <pid>\n";
 die $usage unless defined $library && defined $mode;
-if ($mode eq 'list' && !@arguments) {
-    $ENV{NPT_MODE} = 'list';
+if (($mode eq 'serve' || $mode eq 'list') && !@arguments) {
+    $ENV{NPT_MODE} = $mode;
 } elsif (($mode eq 'send' || $mode eq 'override-send') && @arguments == 2 && $arguments[1] =~ /^\d+$/) {
     @ENV{qw(NPT_MODE NPT_ACTION NPT_PID)} = ($mode, @arguments);
 } else {
