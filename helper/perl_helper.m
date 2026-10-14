@@ -2,8 +2,9 @@
 #import <dlfcn.h>
 
 // Loaded into /usr/bin/perl (signing identifier com.apple.perl) by perl_helper.pl.
-// mediaremoted's read-access predicate has a com.apple. identity branch; this
-// helper tests whether that host process receives the full Now Playing list.
+// mediaremoted's read-access predicate has a com.apple. identity branch, so this host
+// process receives the full Now Playing list. Its targeted commands are still redirected
+// to the current Now Playing player, which is why commands use the override.
 //
 // Contracts below were read from the arm64e disassembly of the installed
 // MediaRemote on macOS 15.8 (24H23); see docs/PERL_HELPER.md.
@@ -23,6 +24,9 @@ typedef void (*SendFn)(uint32_t command, NSDictionary *options, id path, uint32_
 typedef void (*SetOverrideFn)(NSString *bundleIdentifier);
 
 static const int64_t kTimeoutSeconds = 8;
+// MRMediaRemoteCommand values; checked against MediaRemote's own descriptions at startup.
+static const uint32_t kPlayCommand = 0;
+static const uint32_t kPauseCommand = 1;
 
 static struct {
     GetClientsFn getClients;
@@ -39,7 +43,7 @@ static struct {
 
 static dispatch_queue_t replyQueue;
 
-/// Write one object as a single JSON line; serve-mode replies are newline-delimited.
+/// Write one object as a single JSON line; replies are newline-delimited.
 static void emit(NSDictionary *object) {
     NSError *error = nil;
     NSData *data = [NSJSONSerialization dataWithJSONObject:object options:NSJSONWritingSortedKeys error:&error];
@@ -52,13 +56,7 @@ static void emit(NSDictionary *object) {
     fflush(stdout);
 }
 
-/// One-shot modes only: report the error and end the process.
-__attribute__((noreturn)) static void fail(NSString *message) {
-    emit(@{@"error": message});
-    exit(1);
-}
-
-/// The error object of a failed serve reply, e.g.
+/// The error object of a failed reply or fatal event, e.g.
 ///     {"code": "timeout", "message": "MRMediaRemoteGetNowPlayingClients timed out"}
 static NSDictionary *replyError(NSString *code, NSString *message) {
     return @{@"code": code, @"message": message};
@@ -82,13 +80,23 @@ static BOOL loadMediaRemote(void) {
 }
 
 /// Run one asynchronous MediaRemote request and wait for its reply.
-/// Returns NO on timeout. The late reply may still run afterwards, which is safe in the
-/// long-running serve mode only while completion blocks write nothing but their own
-/// `__block` variables before calling `done`.
+/// Returns NO on timeout. The late reply may still run afterwards, which is safe in this
+/// long-running process only while completion blocks write nothing but their own
+/// `__block` variables before calling `done`, and callers read those only on success.
 static BOOL await(void (^request)(dispatch_block_t done)) {
     dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
     request(^{ dispatch_semaphore_signal(semaphore); });
     return dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, kTimeoutSeconds * NSEC_PER_SEC)) == 0;
+}
+
+/// Re-evaluate `condition` every 10 ms until it holds or `timeout` passes.
+static BOOL waitUntil(NSTimeInterval timeout, BOOL (^condition)(void)) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
+    do {
+        if (condition()) return YES;
+        [NSThread sleepForTimeInterval:0.01];
+    } while ([deadline timeIntervalSinceNow] > 0);
+    return condition();
 }
 
 /// Every Now Playing client, or nil with `*error` set to a reply error.
@@ -118,85 +126,8 @@ static NSString *stringValue(id object, NSString *key) {
     return value ? [value description] : nil;
 }
 
-/// One record per Now Playing client. Title is diagnostic only, never identity.
-/// Electron apps can report a generic client bundle, so the running application
-/// for the client PID is recorded alongside it.
-///
-/// Example (YouTube Music, 13 October 2026):
-///     {"bundleIdentifier": "Electron", "displayName": null, "pid": 1332,
-///      "applicationBundleIdentifier": "com.github.th-ch.youtube-music",
-///      "applicationName": "YouTube Music",
-///      "playerPath": "origin-Mac-1280262988/client-Electron-1332/player-(null)",
-///      "state": 2, "stateDescription": "Paused", "title": "...", "playbackRate": 0}
-static NSDictionary *describeClient(id client, id path) {
-    NSMutableDictionary *record = [NSMutableDictionary dictionary];
-    pid_t pid = [[client valueForKey:@"processIdentifier"] intValue];
-    NSRunningApplication *application = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
-    record[@"applicationBundleIdentifier"] = application.bundleIdentifier ?: NSNull.null;
-    record[@"applicationName"] = application.localizedName ?: NSNull.null;
-    record[@"bundleIdentifier"] = stringValue(client, @"bundleIdentifier") ?: NSNull.null;
-    record[@"parentApplicationBundleIdentifier"] =
-        stringValue(client, @"parentApplicationBundleIdentifier") ?: NSNull.null;
-    record[@"displayName"] = stringValue(client, @"displayName") ?: NSNull.null;
-    record[@"pid"] = @(pid);
-    record[@"client"] = [client description];
-    record[@"playerPath"] = [path description];
-
-    __block uint32_t state = 0;
-    BOOL stateReplied = await(^(dispatch_block_t done) {
-        MR.getState(path, replyQueue, ^(uint32_t result) {
-            state = result;
-            done();
-        });
-    });
-    record[@"state"] = stateReplied ? @(state) : NSNull.null;
-    record[@"stateDescription"] = stateReplied ? (MR.stateDescription(state) ?: NSNull.null) : @"timeout";
-
-    __block NSDictionary *info = nil;
-    BOOL infoReplied = await(^(dispatch_block_t done) {
-        MR.getInfo(path, NO, replyQueue, ^(CFDictionaryRef result, __unused void *unused) {
-            info = result ? [(__bridge NSDictionary *)result copy] : nil;
-            done();
-        });
-    });
-    record[@"title"] = infoReplied ? (info[@"kMRMediaRemoteNowPlayingInfoTitle"] ?: NSNull.null) : @"timeout";
-    record[@"playbackRate"] = infoReplied ? (info[@"kMRMediaRemoteNowPlayingInfoPlaybackRate"] ?: NSNull.null)
-                                          : @"timeout";
-    return record;
-}
-
-/// The system's current Now Playing client: where untargeted commands go.
-static NSDictionary *currentClient(void) {
-    __block id current = nil;
-    __block NSError *currentError = nil;
-    BOOL replied = await(^(dispatch_block_t done) {
-        MR.getCurrentClient(replyQueue, ^(id client, NSError *error) {
-            current = client;
-            currentError = error;
-            done();
-        });
-    });
-    return @{
-        @"currentClientBundleIdentifier": replied ? (stringValue(current, @"bundleIdentifier") ?: NSNull.null)
-                                                  : @"timeout",
-        @"currentClientPid": replied ? ([current valueForKey:@"processIdentifier"] ?: NSNull.null) : @"timeout",
-        @"currentClientError": currentError ? currentError.description : NSNull.null,
-    };
-}
-
-/// Snapshot of every client plus the system's current Now Playing client, so a
-/// command result can be compared against which source was the global target.
-static NSDictionary *snapshot(NSArray *clients, NSArray *paths) {
-    NSMutableArray *sources = [NSMutableArray array];
-    for (NSUInteger index = 0; index < clients.count; index++) {
-        NSMutableDictionary *record = [describeClient(clients[index], paths[index]) mutableCopy];
-        record[@"index"] = @(index);
-        [sources addObject:record];
-    }
-    NSMutableDictionary *output = [currentClient() mutableCopy];
-    output[@"capturedAt"] = [[NSISO8601DateFormatter new] stringFromDate:[NSDate date]];
-    output[@"sources"] = sources;
-    return output;
+static pid_t clientPid(id client) {
+    return [[client valueForKey:@"processIdentifier"] intValue];
 }
 
 static NSArray *pathsForClients(NSArray *clients) {
@@ -207,142 +138,216 @@ static NSArray *pathsForClients(NSArray *clients) {
     return paths;
 }
 
-static void runList(void) {
-    NSDictionary *error = nil;
-    NSArray *clients = nowPlayingClients(&error);
-    if (!clients) fail(error[@"message"]);
-    NSMutableDictionary *output = [snapshot(clients, pathsForClients(clients)) mutableCopy];
-    output[@"mode"] = @"list";
-    output[@"clientCount"] = @(clients.count);
-    output[@"operatingSystem"] = NSProcessInfo.processInfo.operatingSystemVersionString;
-    output[@"hostExecutable"] = NSProcessInfo.processInfo.arguments.firstObject ?: NSNull.null;
-    emit(output);
-}
-
-/// Send one explicit Play, Pause, or NextTrack to the client with this PID, recording every
-/// source before and after. PID selects within one listing; it is not a stored identity.
-///
-/// With `override`, the target's client bundle is first set as the Now Playing
-/// override, because the daemon redirects this caller's targeted commands to the
-/// current Now Playing player. The override is always cleared afterwards.
-static void runSend(NSString *action, pid_t pid, BOOL override) {
-    // MRMediaRemoteCommand values with MediaRemote's own description for each;
-    // the description is checked before anything is sent.
-    NSDictionary<NSString *, NSArray *> *commands = @{
-        @"play": @[@0, @"Play"], @"pause": @[@1, @"Pause"], @"next": @[@4, @"NextTrack"],
-    };
-    if (!commands[action]) fail(@"Action must be play, pause, or next");
-    uint32_t command = [commands[action][0] unsignedIntValue];
-    NSString *commandName = MR.commandDescription(command);
-    if (![commandName isEqualToString:commands[action][1]]) {
-        fail([NSString stringWithFormat:@"Command %u describes itself as %@, not %@. Nothing sent.",
-                                        command, commandName, commands[action][1]]);
-    }
-
-    NSDictionary *error = nil;
-    NSArray *clients = nowPlayingClients(&error);
-    if (!clients) fail(error[@"message"]);
-    NSArray *paths = pathsForClients(clients);
-    NSIndexSet *matches = [clients indexesOfObjectsPassingTest:^BOOL(id client, __unused NSUInteger index, __unused BOOL *stop) {
-        return [[client valueForKey:@"processIdentifier"] intValue] == pid;
-    }];
-    if (matches.count != 1) {
-        fail([NSString stringWithFormat:@"Expected exactly one client with PID %d; found %lu. Nothing sent.",
-                                        pid, (unsigned long)matches.count]);
-    }
-    NSUInteger target = matches.firstIndex;
-    NSDictionary *before = snapshot(clients, paths);
-
-    // The daemon looks the override up by *client* bundle; for Electron apps that is
-    // the generic "Electron" (the real application bundle was not found, 13 October).
-    NSString *overrideBundle = stringValue(clients[target], @"bundleIdentifier");
-    // The client bundle matches the code-signing identifier; ad-hoc Electron builds
-    // keep the default "Electron", so two such sources make the override ambiguous.
-    NSUInteger sharing = [clients indexesOfObjectsPassingTest:^BOOL(id client, __unused NSUInteger index, __unused BOOL *stop) {
-        return [stringValue(client, @"bundleIdentifier") isEqualToString:overrideBundle];
-    }].count;
-    if (override && sharing != 1) {
-        fail([NSString stringWithFormat:@"%lu Now Playing sources share client bundle %@; the override is ambiguous. Nothing sent.",
-                                        (unsigned long)sharing, overrideBundle]);
-    }
-    NSDictionary *currentDuringOverride = (id)NSNull.null;
-    NSDictionary *currentAfterClear = (id)NSNull.null;
-    if (override) {
-        MR.setOverride(overrideBundle);
-        [NSThread sleepForTimeInterval:0.3];
-        currentDuringOverride = currentClient();
-        // An override that did not take effect (unknown bundle, or a shared bundle
-        // resolving to another process) would send the command to the wrong source.
-        if (![currentDuringOverride[@"currentClientPid"] isEqual:@(pid)]) {
-            MR.setOverride(nil);
-            fail([NSString stringWithFormat:@"Override %@ made PID %@ current, not %d. Override cleared; nothing sent.",
-                                            overrideBundle, currentDuringOverride[@"currentClientPid"], pid]);
-        }
-    }
-    __block NSString *result = nil;
+/// MediaRemote's name for the player's state ("Playing", "Paused", ...), or nil on timeout.
+static NSString *playbackState(id path) {
+    __block uint32_t state = 0;
     BOOL replied = await(^(dispatch_block_t done) {
-        MR.send(command, @{}, paths[target], 0, replyQueue, ^(id commandResult) {
-            result = [commandResult description];
+        MR.getState(path, replyQueue, ^(uint32_t result) {
+            state = result;
             done();
         });
     });
-    if (override) {
-        MR.setOverride(nil);
-        [NSThread sleepForTimeInterval:0.3];
-        currentAfterClear = currentClient();
-    }
-    // Commands apply asynchronously; allow the player and daemon to settle.
-    [NSThread sleepForTimeInterval:1.5];
-    NSArray *afterClients = nowPlayingClients(&error);
-    if (!afterClients) fail(error[@"message"]);
-    emit(@{
-        @"mode": override ? @"override-send" : @"send",
-        @"overrideBundleIdentifier": override ? overrideBundle : NSNull.null,
-        @"currentDuringOverride": currentDuringOverride,
-        @"currentAfterOverrideCleared": currentAfterClear,
-        @"action": action,
-        @"commandDescription": commandName,
-        @"targetPid": @(pid),
-        @"targetIndex": @(target),
-        @"targetPlayerPath": [paths[target] description],
-        @"commandResult": replied ? (result ?: NSNull.null) : @"timeout",
-        @"before": before,
-        @"after": snapshot(afterClients, pathsForClients(afterClients)),
-    });
+    if (!replied) return nil;
+    return MR.stateDescription(state) ?: [NSString stringWithFormat:@"%u", state];
 }
 
-/// Serve reply body for {"op": "list"}: the protocol's compact view of a snapshot.
-/// `current` is null when no client is current. Identity is pid + clientBundle; the
-/// other fields are for display.
+/// The system's current Now Playing client (nil when none), where untargeted commands go.
+/// Returns NO on timeout.
+static BOOL currentClient(id *client) {
+    __block id current = nil;
+    BOOL replied = await(^(dispatch_block_t done) {
+        MR.getCurrentClient(replyQueue, ^(id result, __unused NSError *error) {
+            current = result;
+            done();
+        });
+    });
+    *client = replied ? current : nil;
+    return replied;
+}
+
+/// One `list` source, or nil on timeout. Title is for display only, never identity.
+/// Electron apps can report a generic client bundle, so the running application for
+/// the client PID is reported alongside it.
+///
+/// Example (YouTube Music):
+///     {"pid": 1332, "clientBundle": "Electron",
+///      "appBundle": "com.github.th-ch.youtube-music", "appName": "YouTube Music",
+///      "state": "Paused", "title": "..."}
+static NSDictionary *describeSource(id client, id path) {
+    NSString *state = playbackState(path);
+    if (!state) return nil;
+    __block NSString *title = nil;
+    BOOL replied = await(^(dispatch_block_t done) {
+        MR.getInfo(path, NO, replyQueue, ^(CFDictionaryRef info, __unused void *unused) {
+            title = [((__bridge NSDictionary *)info)[@"kMRMediaRemoteNowPlayingInfoTitle"] copy];
+            done();
+        });
+    });
+    if (!replied) return nil;
+    pid_t pid = clientPid(client);
+    NSRunningApplication *application = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+    return @{
+        @"pid": @(pid),
+        @"clientBundle": stringValue(client, @"bundleIdentifier") ?: NSNull.null,
+        @"appBundle": application.bundleIdentifier ?: NSNull.null,
+        @"appName": application.localizedName ?: NSNull.null,
+        @"state": state,
+        @"title": title ?: NSNull.null,
+    };
+}
+
+/// Reply body for {"op": "list"}. `current` is null when no client is current.
+/// Identity is pid + clientBundle; the other source fields are for display.
 ///
 /// Example:
 ///     {"current": {"pid": 1334, "clientBundle": "com.spotify.client"},
-///      "sources": [{"pid": 1332, "clientBundle": "Electron",
-///                   "appBundle": "com.github.th-ch.youtube-music", "appName": "YouTube Music",
-///                   "state": "Paused", "title": "..."}]}
+///      "sources": [<describeSource record>, ...]}
 static NSDictionary *listReply(NSDictionary **error) {
     NSArray *clients = nowPlayingClients(error);
     if (!clients) return nil;
-    NSDictionary *full = snapshot(clients, pathsForClients(clients));
-    if ([full[@"currentClientPid"] isEqual:@"timeout"]) {
+    NSArray *paths = pathsForClients(clients);
+    NSMutableArray *sources = [NSMutableArray array];
+    for (NSUInteger index = 0; index < clients.count; index++) {
+        NSDictionary *source = describeSource(clients[index], paths[index]);
+        if (!source) {
+            *error = replyError(@"timeout", @"Playback state or info request timed out");
+            return nil;
+        }
+        [sources addObject:source];
+    }
+    id current = nil;
+    if (!currentClient(&current)) {
         *error = replyError(@"timeout", @"MRMediaRemoteGetNowPlayingClient timed out");
         return nil;
     }
-    NSMutableArray *sources = [NSMutableArray array];
-    for (NSDictionary *source in full[@"sources"]) {
-        [sources addObject:@{
-            @"pid": source[@"pid"],
-            @"clientBundle": source[@"bundleIdentifier"],
-            @"appBundle": source[@"applicationBundleIdentifier"],
-            @"appName": source[@"applicationName"],
-            @"state": source[@"stateDescription"],
-            @"title": source[@"title"],
+    return @{
+        @"current": current ? @{@"pid": @(clientPid(current)),
+                                @"clientBundle": stringValue(current, @"bundleIdentifier") ?: NSNull.null}
+                            : NSNull.null,
+        @"sources": sources,
+    };
+}
+
+/// Reply body for {"op": "command"}: explicit Play or Pause to each target, in order.
+/// Results follow the target order:
+///     {"results": [{"pid": 1334, "outcome": "done", "route": "override", "state": "Paused"},
+///                  {"pid": 1332, "outcome": "notFound"}]}
+///
+/// Every target is resolved and prechecked in one listing before anything is sent, so a
+/// route-level error (nil with `*error`) means nothing was sent. After that, a MediaRemote
+/// timeout only makes its own target fail a check.
+static NSDictionary *commandReply(NSString *action, NSArray<NSDictionary *> *targets, NSDictionary **error) {
+    BOOL pause = [action isEqualToString:@"pause"];
+    uint32_t command = pause ? kPauseCommand : kPlayCommand;
+    NSString *requiredState = pause ? @"Playing" : @"Paused";
+    NSString *expectedState = pause ? @"Paused" : @"Playing";
+
+    // Resolve: exactly one listed client with this pid AND client bundle.
+    // Precheck: the source is in the state the action applies to.
+    NSArray *clients = nowPlayingClients(error);
+    if (!clients) return nil;
+    NSArray *paths = pathsForClients(clients);
+    NSMutableArray<NSMutableDictionary *> *results = [NSMutableArray array];
+    // Per result: the resolved client's index, or NSNotFound when nothing will be sent.
+    NSMutableArray<NSNumber *> *clientIndexes = [NSMutableArray array];
+    for (NSDictionary *target in targets) {
+        NSMutableDictionary *result = [@{@"pid": target[@"pid"]} mutableCopy];
+        NSIndexSet *matches = [clients indexesOfObjectsPassingTest:^BOOL(id client, __unused NSUInteger index, __unused BOOL *stop) {
+            return clientPid(client) == [target[@"pid"] intValue] &&
+                   [stringValue(client, @"bundleIdentifier") isEqualToString:target[@"clientBundle"]];
         }];
+        NSUInteger clientIndex = NSNotFound;
+        if (matches.count != 1) {
+            result[@"outcome"] = @"notFound";
+        } else {
+            NSString *state = playbackState(paths[matches.firstIndex]);
+            if (!state) {
+                *error = replyError(@"timeout", @"MRMediaRemoteGetPlaybackStateForPlayer timed out");
+                return nil;
+            }
+            if ([state isEqualToString:requiredState]) {
+                clientIndex = matches.firstIndex;
+            } else {
+                result[@"outcome"] = @"skipped";
+                result[@"state"] = state;
+            }
+        }
+        [results addObject:result];
+        [clientIndexes addObject:@(clientIndex)];
     }
-    id current = full[@"currentClientPid"] == NSNull.null
-        ? NSNull.null
-        : @{@"pid": full[@"currentClientPid"], @"clientBundle": full[@"currentClientBundleIdentifier"]};
-    return @{@"current": current, @"sources": sources};
+
+    // Route and send, one target at a time. The current client is read fresh per target
+    // because an earlier command in the group can change it.
+    NSMutableDictionary<NSNumber *, id> *awaitingState = [NSMutableDictionary dictionary];  // result index → path
+    for (NSUInteger index = 0; index < results.count; index++) {
+        NSUInteger clientIndex = clientIndexes[index].unsignedIntegerValue;
+        if (clientIndex == NSNotFound) continue;
+        NSMutableDictionary *result = results[index];
+        id client = clients[clientIndex];
+        pid_t pid = clientPid(client);
+        NSString *bundle = stringValue(client, @"bundleIdentifier");
+        // The daemon redirects this host's targeted commands to the current Now Playing
+        // player, so a target that is already current is reached without the override.
+        id current = nil;
+        BOOL direct = currentClient(&current) && clientPid(current) == pid;
+        if (!direct) {
+            // The override is looked up by client bundle; a shared bundle (e.g. two ad-hoc
+            // "Electron" apps) could make the wrong process current.
+            NSUInteger sharing = [clients indexesOfObjectsPassingTest:^BOOL(id other, __unused NSUInteger i, __unused BOOL *stop) {
+                return [stringValue(other, @"bundleIdentifier") isEqualToString:bundle];
+            }].count;
+            if (sharing != 1) {
+                result[@"outcome"] = @"ambiguousBundle";
+                continue;
+            }
+        }
+        result[@"route"] = direct ? @"direct" : @"override";
+        if (!direct) {
+            MR.setOverride(bundle);
+            BOOL honored = waitUntil(1.0, ^BOOL {
+                id overridden = nil;
+                return currentClient(&overridden) && clientPid(overridden) == pid;
+            });
+            if (!honored) {
+                MR.setOverride(nil);
+                result[@"outcome"] = @"overrideNotHonored";
+                continue;
+            }
+        }
+        // A send that times out may still apply; the state check below decides.
+        await(^(dispatch_block_t done) {
+            MR.send(command, @{}, paths[clientIndex], 0, replyQueue, ^(__unused id commandResult) { done(); });
+        });
+        if (!direct) MR.setOverride(nil);
+        awaitingState[@(index)] = paths[clientIndex];
+    }
+
+    // One polled state check for every target that was sent to.
+    waitUntil(3.0, ^BOOL {
+        for (NSNumber *index in awaitingState.allKeys) {
+            NSString *state = playbackState(awaitingState[index]);
+            if (state) results[index.unsignedIntegerValue][@"state"] = state;
+            if ([state isEqualToString:expectedState]) {
+                results[index.unsignedIntegerValue][@"outcome"] = @"done";
+                [awaitingState removeObjectForKey:index];
+            }
+        }
+        return awaitingState.count == 0;
+    });
+    for (NSNumber *index in awaitingState) results[index.unsignedIntegerValue][@"outcome"] = @"noStateChange";
+    return @{@"results": results};
+}
+
+/// Whether `targets` is [{"pid": <number>, "clientBundle": <string>}, ...].
+static BOOL validTargets(id targets) {
+    if (![targets isKindOfClass:NSArray.class]) return NO;
+    for (id target in targets) {
+        if (![target isKindOfClass:NSDictionary.class] || ![target[@"pid"] isKindOfClass:NSNumber.class] ||
+            ![target[@"clientBundle"] isKindOfClass:NSString.class]) {
+            return NO;
+        }
+    }
+    return YES;
 }
 
 /// Answer one request line. Every reply echoes the request's "id" (null if unreadable):
@@ -358,6 +363,13 @@ static NSDictionary *handleRequest(NSData *line) {
     NSDictionary *body = nil;
     if ([request[@"op"] isEqual:@"list"]) {
         body = listReply(&error);
+    } else if ([request[@"op"] isEqual:@"command"]) {
+        if (([request[@"action"] isEqual:@"play"] || [request[@"action"] isEqual:@"pause"]) &&
+            validTargets(request[@"targets"])) {
+            body = commandReply(request[@"action"], request[@"targets"], &error);
+        } else {
+            error = replyError(@"badRequest", @"command needs action play or pause and targets [{pid, clientBundle}]");
+        }
     } else {
         error = replyError(@"badRequest", [NSString stringWithFormat:@"Unknown op %@", request[@"op"]]);
     }
@@ -368,9 +380,11 @@ static NSDictionary *handleRequest(NSData *line) {
     return reply;
 }
 
-/// Long-running mode: one JSON request per stdin line, one JSON reply per stdout line,
-/// handled one at a time on this thread. Returns when stdin closes.
+/// One JSON request per stdin line, one JSON reply per stdout line, handled one at a
+/// time on this thread. Returns when stdin closes.
 static void runServe(void) {
+    // A crash inside an earlier helper's override window can leave the override set.
+    MR.setOverride(nil);
     emit(@{@"event": @"ready", @"protocol": @1,
            @"operatingSystem": NSProcessInfo.processInfo.operatingSystemVersionString});
     char *line = NULL;
@@ -386,29 +400,23 @@ static void runServe(void) {
 }
 
 /// Installed as a Perl XSUB; the interpreter and CV arguments are unused.
-/// Perl passes the request in environment variables and this function exits the process.
+/// Serves requests until stdin closes, then exits the process. A startup failure is
+/// reported as a `fatal` event instead of `ready`.
 void npt_main(__unused void *interpreter, __unused void *cv) {
     @autoreleasepool {
         replyQueue = dispatch_queue_create("NowPlayingAPITest.perl-helper", DISPATCH_QUEUE_SERIAL);
-        NSDictionary<NSString *, NSString *> *environment = NSProcessInfo.processInfo.environment;
-        NSString *mode = environment[@"NPT_MODE"];
+        NSDictionary *fatal = nil;
         if (!loadMediaRemote()) {
-            NSString *message = @"Could not load MediaRemote or resolve a required symbol";
-            if (![mode isEqualToString:@"serve"]) fail(message);
-            emit(@{@"event": @"fatal", @"error": replyError(@"mediaRemoteUnavailable", message)});
+            fatal = replyError(@"mediaRemoteUnavailable", @"Could not load MediaRemote or resolve a required symbol");
+        } else if (![MR.commandDescription(kPlayCommand) isEqualToString:@"Play"] ||
+                   ![MR.commandDescription(kPauseCommand) isEqualToString:@"Pause"]) {
+            fatal = replyError(@"unexpectedCommandValues", @"MediaRemote commands 0 and 1 are not Play and Pause");
+        }
+        if (fatal) {
+            emit(@{@"event": @"fatal", @"error": fatal});
             exit(1);
         }
-        if ([mode isEqualToString:@"serve"]) {
-            runServe();
-        } else if ([mode isEqualToString:@"list"]) {
-            runList();
-        } else if (([mode isEqualToString:@"send"] || [mode isEqualToString:@"override-send"]) &&
-                   environment[@"NPT_ACTION"] && environment[@"NPT_PID"].intValue > 0) {
-            runSend(environment[@"NPT_ACTION"], environment[@"NPT_PID"].intValue,
-                    [mode isEqualToString:@"override-send"]);
-        } else {
-            fail(@"Unknown mode");
-        }
+        runServe();
     }
     exit(0);
 }

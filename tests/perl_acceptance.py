@@ -1,15 +1,20 @@
-"""Run the acceptance tests (Tests E, F, H in docs/PERL_HELPER.md) through the
-Perl-hosted helper's override-send mode, against the three fixture apps.
+"""Run the acceptance tests (Tests H, E, F, and optionally G in docs/PERL_HELPER.md)
+through one long-running Perl-hosted helper, against the three fixture apps.
 
-Every helper capture is saved under Outputs/ACCEPTANCE_<timestamp>/ with a
+Every request and reply is saved under Outputs/ACCEPTANCE_<timestamp>/ with a
 summary. States are MediaRemote-reported; audible/foreground behavior still
-needs the user's observation. Test G (quitting an app) is not automated.
+needs the user's observation. Test G quits YouTube Music, so it runs only with
+--test-g.
 """
+import argparse
 import datetime
 import json
+import os
 import pathlib
+import signal
 import subprocess
 import sys
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LIBRARY = ROOT / ".build" / "libNowPlayingPerlHelper.dylib"
@@ -20,6 +25,10 @@ FIXTURES = {
     "YouTube Music": "com.github.th-ch.youtube-music",
 }
 EXPECTED_STATE = {"play": "Playing", "pause": "Paused"}
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--test-g", action="store_true", help="also run Test G, which quits YouTube Music (SIGTERM)")
+args = parser.parse_args()
 
 out_dir = ROOT / "Outputs" / f"ACCEPTANCE_{datetime.datetime.now():%Y%m%d-%H%M%S}"
 out_dir.mkdir(parents=True)
@@ -32,77 +41,109 @@ def log(line=""):
     log_lines.append(line)
 
 
-def helper(label, *arguments):
-    """Run one helper invocation, save its JSON, and return it."""
+def request(label, **fields):
+    """Send one request to the helper, save it with its reply, and return the reply.
+    A route-level error ends the run."""
     global step_number
     step_number += 1
-    completed = subprocess.run(
-        ["/usr/bin/perl", str(ROOT / "helper" / "perl_helper.pl"), str(LIBRARY), *arguments],
-        capture_output=True, text=True, timeout=60,
-    )
-    (out_dir / f"{step_number:02d}_{label}.json").write_text(completed.stdout + completed.stderr)
-    try:
-        return json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        return {"error": f"exit {completed.returncode}: {completed.stdout}{completed.stderr}".strip()}
-
-
-def by_pid(snapshot):
-    return {source["pid"]: source for source in snapshot["sources"]}
-
-
-def identity(source):
-    """What a paused group would store for one source."""
-    return (source["pid"], source["bundleIdentifier"], source["playerPath"])
+    message = {"id": step_number, **fields}
+    helper.stdin.write(json.dumps(message) + "\n")
+    helper.stdin.flush()
+    line = helper.stdout.readline()
+    if not line:
+        sys.exit(f"{label}: helper exited with status {helper.wait()}")
+    reply = json.loads(line)
+    capture = {"request": message, "reply": reply}
+    (out_dir / f"{step_number:02d}_{label}.json").write_text(json.dumps(capture, ensure_ascii=False, indent=2))
+    if not reply["ok"]:
+        sys.exit(f"{label} failed: {reply['error']}")
+    return reply
 
 
 def listing(label):
-    result = helper(label, "list")
-    if "error" in result:
-        sys.exit(f"list failed: {result['error']}")
-    return result
+    return request(label, op="list")
 
 
-def fixture_pids(snapshot):
-    pids = {}
+def settled_listing(label):
+    """List until two lists 50 ms apart agree on every state (at most 2 s), so a
+    source that is still settling, such as a browser video restarting, is not
+    blamed on the next command."""
+    previous = listing(label)
+    for _ in range(40):
+        time.sleep(0.05)
+        latest = listing(label)
+        # The list order can change between lists, so compare by pid.
+        if {s["pid"]: s["state"] for s in latest["sources"]} == {s["pid"]: s["state"] for s in previous["sources"]}:
+            return latest
+        previous = latest
+    return latest
+
+
+def by_pid(sources):
+    return {source["pid"]: source for source in sources}
+
+
+def identity(source):
+    """What a paused group stores for one source; also the command target."""
+    return {"pid": source["pid"], "clientBundle": source["clientBundle"]}
+
+
+def fixture_targets(snapshot):
+    targets = {}
     for name, bundle in FIXTURES.items():
-        matches = [s["pid"] for s in snapshot["sources"] if s["applicationBundleIdentifier"] == bundle]
+        matches = [identity(s) for s in snapshot["sources"] if s["appBundle"] == bundle]
         if len(matches) != 1:
             sys.exit(f"Expected one Now Playing source for {name}; found {len(matches)}.")
-        pids[name] = matches[0]
-    return pids
+        targets[name] = matches[0]
+    return targets
 
 
-def command(test, name, action, pid):
-    """Send one override-send command and classify it (Test H classes)."""
-    result = helper(f"{test}_{action}_{name.replace(' ', '')}", "override-send", action, str(pid))
-    if "error" in result:
-        outcome = f"command rejected: {result['error']}"
-    else:
-        before, after = by_pid(result["before"]), by_pid(result["after"])
-        others_changed = [
-            after[p]["applicationName"] for p in before
-            if p != pid and p in after and before[p]["stateDescription"] != after[p]["stateDescription"]
-        ]
-        if f"-{pid}/" not in str(result["commandResult"]):
-            outcome = f"wrong target: {result['commandResult']}"
-        elif others_changed:
-            outcome = f"wrong target affected: {', '.join(others_changed)}"
-        elif action in EXPECTED_STATE and before[pid]["stateDescription"] == EXPECTED_STATE[action]:
-            outcome = f"no transition: already {EXPECTED_STATE[action]}"
-        elif action in EXPECTED_STATE and after.get(pid, {}).get("stateDescription") != EXPECTED_STATE[action]:
-            outcome = f"accepted but no state change: {after.get(pid, {}).get('stateDescription')}"
-        elif action == "next" and after[pid]["title"] == before[pid]["title"]:
-            outcome = "accepted but title unchanged"
-        else:
-            outcome = "pass"
-    log(f"  {test:9} {action:5} {name:13} -> {outcome}")
-    return outcome == "pass"
+def command(test, action, expected):
+    """Send one command to the named fixtures, in order, and check every result.
+
+    `expected` maps fixture name to the expected outcome, e.g. {"Spotify": "done"}.
+    A list before and after the command checks that each `done` target reached
+    the new state, that no other source changed, and that the first target's
+    route is `direct` exactly when it was already current.
+    """
+    names = list(expected)
+    label = f"{test}_{action}_{'+'.join(name.replace(' ', '') for name in names)}"
+    before = settled_listing(f"{label}_before")
+    started = time.monotonic()
+    reply = request(label, op="command", action=action, targets=[targets[name] for name in names])
+    milliseconds = 1000 * (time.monotonic() - started)
+    after = by_pid(listing(f"{label}_after")["sources"])
+
+    problems = []
+    for name, result in zip(names, reply["results"]):
+        state_after = after.get(result["pid"], {}).get("state")
+        if result["outcome"] != expected[name]:
+            problems.append(f"{name} {result['outcome']} (expected {expected[name]})")
+        elif result["outcome"] == "done" and state_after != EXPECTED_STATE[action]:
+            problems.append(f"{name} done but {state_after}")
+    target_pids = {targets[name]["pid"] for name in names}
+    others_changed = [
+        source["appName"] for pid, source in by_pid(before["sources"]).items()
+        if pid not in target_pids and pid in after and after[pid]["state"] != source["state"]
+    ]
+    if others_changed:
+        problems.append(f"other sources changed: {', '.join(others_changed)}")
+    first = reply["results"][0]
+    if "route" in first:
+        was_current = before["current"] is not None and before["current"]["pid"] == first["pid"]
+        if first["route"] != ("direct" if was_current else "override"):
+            problems.append(f"route {first['route']} although current was {before['current']}")
+
+    routes = ", ".join(result.get("route", "-") for result in reply["results"])
+    log(f"  {datetime.datetime.now():%H:%M:%S} {test:9} {action:5} {' + '.join(names):30}"
+        f" -> {'; '.join(problems) or 'pass'}"
+        f" [{routes}; {milliseconds:.0f} ms]")
+    return not problems
 
 
-def expect_states(label, pids, expected):
-    sources = by_pid(listing(label))
-    states = {name: sources[pid]["stateDescription"] for name, pid in pids.items()}
+def expect_states(label, expected):
+    sources = by_pid(listing(label)["sources"])
+    states = {name: sources.get(targets[name]["pid"], {}).get("state") for name in expected}
     ok = states == expected
     log(f"  {label}: {'pass' if ok else 'FAIL'} {states}")
     return ok
@@ -115,59 +156,87 @@ subprocess.run(
     check=True,
 )
 log(f"Acceptance run {out_dir.name}")
+# A minimal environment, as the app will use: no inherited PERL5OPT or PERL5LIB.
+helper = subprocess.Popen(
+    ["/usr/bin/perl", str(ROOT / "helper" / "perl_helper.pl"), str(LIBRARY)],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8", env={"PATH": "/usr/bin:/bin"},
+)
+startup = json.loads(helper.stdout.readline() or "{}")
+if startup.get("event") != "ready":
+    sys.exit(f"Helper did not start: {startup}")
+log(f"Helper ready on {startup['operatingSystem']}")
+
 start = listing("setup_list")
-pids = fixture_pids(start)
-baseline = {name: identity(by_pid(start)[pid]) for name, pid in pids.items()}
-log(f"Fixtures: {pids}; current: {start['currentClientBundleIdentifier']}")
+targets = fixture_targets(start)
+log(f"Fixtures: {targets}; current: {start['current']}")
 results = {}
 
 log("Setup: start every fixture playing")
-for name, pid in pids.items():
-    if by_pid(start)[pid]["stateDescription"] != "Playing":
-        command("setup", name, "play", pid)
-playing = {name: "Playing" for name in pids}
-expect_states("setup_check", pids, playing)
+start_states = by_pid(start["sources"])
+not_playing = {name: "done" for name, target in targets.items() if start_states[target["pid"]]["state"] != "Playing"}
+if not_playing:
+    command("setup", "play", not_playing)
+playing = {name: "Playing" for name in targets}
+expect_states("setup_check", playing)
 
 log("Test H: three alternating pause/play cycles")
-tally = {(name, action): 0 for name in pids for action in ("pause", "play")}
+tally = {(name, action): 0 for name in targets for action in ("pause", "play")}
 for cycle in range(1, 4):
-    for name, pid in pids.items():
+    for name in targets:
         for action in ("pause", "play"):
-            tally[(name, action)] += command(f"H{cycle}", name, action, pid)
+            tally[(name, action)] += command(f"H{cycle}", action, {name: "done"})
 for (name, action), count in tally.items():
     log(f"  {name} {action}: {count}/3 correct")
 results["H"] = all(count == 3 for count in tally.values())
 
-log("Test E: identity across relist, play/pause, current-player changes, and track change")
-relisted = listing("E_relist")
-same = {name: identity(by_pid(relisted)[pid]) == baseline[name] for name, pid in pids.items()}
+log("Test E: identity across relist, play/pause, and current-player changes")
+relisted = [identity(source) for source in listing("E_relist")["sources"]]
+same = {name: target in relisted for name, target in targets.items()}
 log(f"  after relist and Test H: identity unchanged {same}")
-track_ok = all([command("E", "Spotify", "next", pids["Spotify"]),
-                command("E", "YouTube Music", "next", pids["YouTube Music"])])
-after_track = listing("E_after_track")
-same_after_track = {name: identity(by_pid(after_track)[pid]) == baseline[name] for name, pid in pids.items()}
-log(f"  after track change: identity unchanged {same_after_track}")
-reuse_ok = all([command("E", "Spotify", "pause", pids["Spotify"]),
-                command("E", "Spotify", "play", pids["Spotify"])])
-results["E"] = all(same.values()) and track_ok and all(same_after_track.values()) and reuse_ok
+reuse_ok = all([command("E", "pause", {"Spotify": "done"}), command("E", "play", {"Spotify": "done"})])
+results["E"] = all(same.values()) and reuse_ok
 
-log("Test F: pause all playing, resume Spotify + Zen, then YouTube Music")
-snapshot = listing("F_capture")
-group = {name: pid for name, pid in pids.items() if by_pid(snapshot)[pid]["stateDescription"] == "Playing"}
-log(f"  captured playing group: {sorted(group)}")
-f_ok = all([command("F", name, "pause", pid) for name, pid in group.items()])
-f_ok &= expect_states("F_all_paused", pids, {name: "Paused" for name in pids})
-f_ok &= all([command("F", name, "play", pids[name]) for name in ("Spotify", "Zen")])
-f_ok &= expect_states("F_two_resumed", pids, {"Spotify": "Playing", "Zen": "Playing", "YouTube Music": "Paused"})
-f_ok &= command("F", "YouTube Music", "play", pids["YouTube Music"])
-f_ok &= expect_states("F_all_resumed", pids, playing)
+log("Test F: pause all playing as one group, resume Spotify + Zen, then YouTube Music")
+snapshot = by_pid(listing("F_capture")["sources"])
+group = [name for name, target in targets.items() if snapshot[target["pid"]]["state"] == "Playing"]
+log(f"  captured playing group: {group}")
+f_ok = command("F", "pause", {name: "done" for name in group})
+f_ok &= expect_states("F_all_paused", {name: "Paused" for name in targets})
+f_ok &= command("F", "play", {"Spotify": "done", "Zen": "done"})
+f_ok &= expect_states("F_two_resumed", {"Spotify": "Playing", "Zen": "Playing", "YouTube Music": "Paused"})
+f_ok &= command("F", "play", {"YouTube Music": "done"})
+f_ok &= expect_states("F_all_resumed", playing)
 results["F"] = f_ok
 
-log("Teardown: pause every fixture")
-for name, pid in pids.items():
-    command("teardown", name, "pause", pid)
+if args.test_g:
+    log("Test G: a paused source quits before its group resumes")
+    g_ok = command("G", "pause", {"Spotify": "done", "YouTube Music": "done"})
+    quitting = targets["YouTube Music"]["pid"]
+    os.kill(quitting, signal.SIGTERM)
+    for _ in range(20):
+        try:
+            os.kill(quitting, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.5)
+    else:
+        sys.exit("YouTube Music did not quit within 10 s")
+    g_ok &= quitting not in by_pid(listing("G_after_quit")["sources"])
+    g_ok &= command("G", "play", {"YouTube Music": "notFound", "Spotify": "done"})
+    results["G"] = g_ok
+
+log("Teardown: pause every playing fixture")
+final_states = by_pid(listing("teardown_capture")["sources"])
+still_playing = {
+    name: "done" for name, target in targets.items()
+    if final_states.get(target["pid"], {}).get("state") == "Playing"
+}
+if still_playing:
+    command("teardown", "pause", still_playing)
 final = listing("teardown_list")
-log(f"  final current client: {final['currentClientBundleIdentifier']}")
+log(f"  final current client: {final['current']}")
+helper.stdin.close()
+log(f"  helper exit status: {helper.wait(timeout=10)}")
 
 log(f"Results: {results}")
 (out_dir / "summary.txt").write_text("\n".join(log_lines) + "\n")
