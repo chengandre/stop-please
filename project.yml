@@ -4,11 +4,13 @@ options:
   bundleIdPrefix: com.andrecheng
   deploymentTarget:
     macOS: "15.0"
+configFiles:
+  # Signing identity and team; Developer ID comes with distribution.
+  Debug: Signing.xcconfig
+  Release: Signing.xcconfig
 settings:
   base:
     ARCHS: arm64
-    # Ad-hoc signing for local builds; Developer ID comes with distribution.
-    CODE_SIGN_IDENTITY: "-"
     CODE_SIGN_STYLE: Manual
     ENABLE_HARDENED_RUNTIME: YES
 targets:

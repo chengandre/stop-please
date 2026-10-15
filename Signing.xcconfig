@@ -1,0 +1,9 @@
+// Code signing for both targets. Ad-hoc by default, so the project builds
+// without any account. To sign local builds with your own identity, which keeps
+// privacy grants such as Accessibility across rebuilds, create Local.xcconfig
+// next to this file (it is gitignored) containing:
+//
+//     CODE_SIGN_IDENTITY = Apple Development
+//     DEVELOPMENT_TEAM = <your team ID>
+CODE_SIGN_IDENTITY = -
+#include? "Local.xcconfig"
