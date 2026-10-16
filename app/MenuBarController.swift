@@ -1,8 +1,12 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// The status item and its menu (BUILD_GUIDE §10.3). Opening the menu shows the
 /// last known state at once and refreshes the list; the menu is rebuilt whenever
 /// the coordinator changes, also while it is open.
+///
+/// Text on the right edge is drawn by AppKit so that it lines up with ⌘Q: states
+/// and "Resume" are badges, the shortcut is a key equivalent.
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
     /// Group times are 24-hour whatever the locale (BUILD_GUIDE §10.3).
@@ -13,9 +17,33 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return formatter
     }()
 
+    /// Longer titles end in "…": about 30 Latin or 15 Chinese characters.
+    private static let maxTitleWidth: CGFloat = 220
+
+    /// Group times keep their width as the digits change.
+    private static let timeFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize,
+                                                                   weight: .regular)
+
+    /// A dot in the image column, so per-source messages line up with the route
+    /// warning's ⚠.
+    private static let messageDot: NSImage = {
+        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: NSRect(x: rect.midX - 2, y: rect.midY - 2, width: 4, height: 4)).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
+
     private let coordinator: Coordinator
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
+    /// App icons by bundle ID. The menu is rebuilt on every refresh; the lookup
+    /// reads the app bundle from disk.
+    private var appIcons: [String: NSImage] = [:]
+    /// The group row showing "Resume"; cleared when the highlight moves.
+    private weak var highlightedGroupItem: NSMenuItem?
 
     init(coordinator: Coordinator) {
         self.coordinator = coordinator
@@ -34,44 +62,50 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func rebuild() {
         menu.removeAllItems()
+        highlightedGroupItem = nil
+
+        // A broken route makes the last list meaningless; Retry is offered below.
+        let routeBroken = coordinator.routeWarning?.canRetry == true
 
         menu.addItem(.sectionHeader(title: "Now Playing"))
-        if coordinator.sources.isEmpty {
+        if routeBroken {
+            menu.addItem(infoItem("Now Playing unavailable"))
+        } else if coordinator.sources.isEmpty {
             menu.addItem(infoItem("Nothing in Now Playing"))
-        }
-        for source in coordinator.sources {
-            let canCommand = source.id != nil && ["Playing", "Paused"].contains(source.state)
-            let item = actionItem(label(source.appName ?? source.clientBundle ?? "pid \(source.pid)", source.title),
-                                  #selector(playOrPause(_:)), enabled: !coordinator.isBusy && canCommand)
-            item.representedObject = source.id
-            item.badge = NSMenuItemBadge(string: source.state)
-            menu.addItem(item)
+        } else {
+            for source in coordinator.sources {
+                menu.addItem(sourceItem(source))
+            }
         }
         menu.addItem(.separator())
-        menu.addItem(actionItem("Pause All Playing", #selector(pauseAll),
-                                enabled: !coordinator.isBusy && coordinator.sources.contains { $0.state == "Playing" }))
+        let canPause = !routeBroken && coordinator.sources.contains { $0.state == "Playing" }
+        let pauseAllItem = actionItem("Pause All Playing", #selector(pauseAll), enabled: !coordinator.isBusy && canPause)
+        // Shows the shortcut like ⌘Q. While the menu is open it also triggers Pause All,
+        // which is what the shortcut does while something is playing. A media-key
+        // shortcut cannot be a key equivalent; Phase 11 shows that one as a badge.
+        pauseAllItem.keyEquivalent = "p"
+        pauseAllItem.keyEquivalentModifierMask = [.control, .option, .command]
+        menu.addItem(pauseAllItem)
 
         if !coordinator.groups.isEmpty {
             menu.addItem(.separator())
             menu.addItem(.sectionHeader(title: "Resume"))
             for group in coordinator.groups {
-                let time = Self.timeFormatter.string(from: group.pausedAt)
-                let names = group.sources.map(\.name).joined(separator: ", ")
-                let item = actionItem("\(time) — \(names)", #selector(resumeGroup(_:)), enabled: !coordinator.isBusy)
-                item.representedObject = group.id
-                item.toolTip = group.sources.map { label($0.name, $0.titleAtPause) }.joined(separator: "\n")
-                menu.addItem(item)
+                menu.addItem(groupItem(group))
             }
         }
 
         if !coordinator.messages.isEmpty || coordinator.routeWarning != nil {
             menu.addItem(.separator())
             for message in coordinator.messages {
-                menu.addItem(infoItem(message))
+                let item = infoItem(message)
+                item.image = Self.messageDot
+                menu.addItem(item)
             }
             if let warning = coordinator.routeWarning {
                 let item = infoItem(warning.text)
-                item.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Warning")
+                item.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")?
+                    .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemOrange]))
                 menu.addItem(item)
                 if warning.canRetry {
                     menu.addItem(actionItem("Retry", #selector(retry), enabled: true))
@@ -83,11 +117,96 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(withTitle: "Quit Pause Playing", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
+    /// The app's icon, the title (the app name when there is none), and the state.
+    /// Only Playing and Paused sources with a client bundle can be clicked.
+    private func sourceItem(_ source: Source) -> NSMenuItem {
+        let name = source.appName ?? source.clientBundle ?? "pid \(source.pid)"
+        let text = if let title = source.title, !title.isEmpty { shorten(title) } else { name }
+        let canCommand = source.id != nil && ["Playing", "Paused"].contains(source.state)
+        let item = actionItem(text, #selector(playOrPause(_:)), enabled: !coordinator.isBusy && canCommand)
+        item.image = appIcon(source.appBundle, size: 26)
+        item.representedObject = source.id
+        item.badge = NSMenuItemBadge(string: source.state)
+        return item
+    }
+
+    /// "15:42" plus one icon per app. "Resume" appears while it is highlighted
+    /// (`menu(_:willHighlight:)`), and the tooltip lists the titles.
+    private func groupItem(_ group: PausedGroup) -> NSMenuItem {
+        let title = NSMutableAttributedString(string: Self.timeFormatter.string(from: group.pausedAt) + "  ",
+                                              attributes: [.font: Self.timeFont])
+        for source in group.sources {
+            let icon = NSTextAttachment()
+            icon.image = appIcon(source.appBundle, size: 16)
+            // Centered on the digits rather than sitting on the baseline.
+            icon.bounds = NSRect(x: 0, y: (Self.timeFont.capHeight - 16) / 2, width: 16, height: 16)
+            title.append(NSAttributedString(attachment: icon))
+            title.append(NSAttributedString(string: " ", attributes: [.font: Self.timeFont]))
+        }
+        let item = actionItem("", #selector(resumeGroup(_:)), enabled: !coordinator.isBusy)
+        item.attributedTitle = title
+        item.representedObject = group.id
+        item.toolTip = group.sources.map { label($0.name, $0.titleAtPause) }.joined(separator: "\n")
+        return item
+    }
+
+    /// Changing an item while the menu is open shows only after `itemChanged`.
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        if let previous = highlightedGroupItem {
+            previous.badge = nil
+            menu.itemChanged(previous)
+            highlightedGroupItem = nil
+        }
+        if let item, item.representedObject is PausedGroup.ID {
+            item.badge = NSMenuItemBadge(string: "Resume")
+            menu.itemChanged(item)
+            highlightedGroupItem = item
+        }
+    }
+
+    /// The icon of the app with this bundle ID, or the generic app icon. Looked up
+    /// by bundle, so it stays after the app quits.
+    private func appIcon(_ bundle: String?, size: CGFloat) -> NSImage {
+        var icon = NSWorkspace.shared.icon(for: .applicationBundle)
+        if let bundle {
+            if let cached = appIcons[bundle] {
+                icon = cached
+            } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) {
+                icon = NSWorkspace.shared.icon(forFile: url.path)
+                appIcons[bundle] = icon
+            }
+        }
+        // Sized on a copy: the cached image is shared by both sizes.
+        let sized = icon.copy() as! NSImage
+        sized.size = NSSize(width: size, height: size)
+        return sized
+    }
+
     /// "Spotify — To My Youth", with long titles shortened.
     private func label(_ name: String, _ title: String?) -> String {
         guard let title, !title.isEmpty else { return name }
-        let short = title.count > 40 ? title.prefix(39) + "…" : Substring(title)
-        return "\(name) — \(short)"
+        return "\(name) — \(shorten(title))"
+    }
+
+    /// Cut at a drawn width rather than a character count, so a Chinese title does
+    /// not make the menu twice as wide as a Latin one.
+    private func shorten(_ title: String) -> String {
+        let font = NSFont.menuFont(ofSize: 0)
+        func width(_ text: String) -> CGFloat {
+            NSAttributedString(string: text, attributes: [.font: font]).size().width
+        }
+        guard width(title) > Self.maxTitleWidth else { return title }
+        // Binary search for the longest prefix that fits with the ellipsis.
+        var fits = 0, tooLong = title.count
+        while tooLong - fits > 1 {
+            let middle = (fits + tooLong) / 2
+            if width(String(title.prefix(middle)) + "…") <= Self.maxTitleWidth {
+                fits = middle
+            } else {
+                tooLong = middle
+            }
+        }
+        return title.prefix(fits).trimmingCharacters(in: .whitespaces) + "…"
     }
 
     private func infoItem(_ title: String) -> NSMenuItem {

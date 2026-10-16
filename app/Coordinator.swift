@@ -7,6 +7,8 @@ private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: 
 struct PausedSource {
     let id: SourceID
     let name: String
+    /// The real app, for its icon: YouTube Music rather than "Electron".
+    let appBundle: String?
     let titleAtPause: String?
 }
 
@@ -151,7 +153,8 @@ final class Coordinator {
         for source in playing {
             guard let id = source.id, let result = results[id] else { continue }
             if result.outcome == .done {
-                paused.append(PausedSource(id: id, name: displayName(source), titleAtPause: source.title))
+                paused.append(PausedSource(id: id, name: displayName(source), appBundle: source.appBundle,
+                                           titleAtPause: source.title))
             } else if let message = message(for: result.outcome, name: displayName(source)) {
                 messages.append(message)
             }
