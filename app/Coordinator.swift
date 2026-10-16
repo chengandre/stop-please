@@ -76,6 +76,26 @@ final class Coordinator {
         }
     }
 
+    /// A click on a Now Playing row: pause it if Playing, play it if Paused. It
+    /// never creates or changes a group (BUILD_GUIDE §10.3).
+    func playOrPause(_ id: SourceID) async {
+        await perform {
+            guard let source = sources.first(where: { $0.id == id }) else { return }
+            let action: CommandAction
+            switch source.state {
+            case "Playing": action = .pause
+            case "Paused": action = .play
+            default: return
+            }
+            let results = try await helper.command(action, targets: [id])
+            routeWarning = nil
+            log("\(action == .pause ? "Pause" : "Play") one", results)
+            if let result = results[id], let message = message(for: result.outcome, name: displayName(source)) {
+                messages.append(message)
+            }
+        }
+    }
+
     /// The shortcut (BUILD_GUIDE §10.1): pause whatever is playing; otherwise resume
     /// a group; otherwise do what the Play/Pause key would. Carbon has already
     /// swallowed the press, so the last case is handled here.

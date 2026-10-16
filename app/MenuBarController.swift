@@ -40,7 +40,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(infoItem("Nothing in Now Playing"))
         }
         for source in coordinator.sources {
-            let item = infoItem(label(source.appName ?? source.clientBundle ?? "pid \(source.pid)", source.title))
+            let canCommand = source.id != nil && ["Playing", "Paused"].contains(source.state)
+            let item = actionItem(label(source.appName ?? source.clientBundle ?? "pid \(source.pid)", source.title),
+                                  #selector(playOrPause(_:)), enabled: !coordinator.isBusy && canCommand)
+            item.representedObject = source.id
             item.badge = NSMenuItemBadge(string: source.state)
             menu.addItem(item)
         }
@@ -102,6 +105,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func pauseAll() {
         Task { await coordinator.pauseAll() }
+    }
+
+    @objc private func playOrPause(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? SourceID else { return }
+        Task { await coordinator.playOrPause(id) }
     }
 
     /// The group is found by id, not position: groups can change while a request runs.
