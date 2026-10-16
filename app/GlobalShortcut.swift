@@ -7,11 +7,11 @@ private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: 
 /// and cannot capture it.
 @MainActor private var shortcutAction: () -> Void = {}
 
-/// Register ⌃⌥⌘P system-wide (BUILD_GUIDE §6.5). Carbon hot keys need no
+/// Register ⌃⌥⌘P system-wide (BUILD_GUIDE §6.5, §10.1). Carbon hot keys need no
 /// Accessibility or Input Monitoring permission. While the app runs, other apps
 /// no longer receive the combination.
 @MainActor
-func registerToggleShortcut(_ action: @escaping () -> Void) {
+func registerGlobalShortcut(_ action: @escaping () -> Void) {
     shortcutAction = action
     var pressed = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
     let handlerStatus = InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in

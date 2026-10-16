@@ -60,8 +60,12 @@ actor HelperClient {
         launch()
     }
 
-    func list() async throws -> [Source] {
-        try await send(Request(op: "list"), replying: ListReply.self).sources
+    func list() async throws -> NowPlayingList {
+        let reply = try await send(Request(op: "list"), replying: ListReply.self)
+        let current = reply.current.flatMap { current in
+            current.clientBundle.map { SourceID(pid: current.pid, clientBundle: $0) }
+        }
+        return NowPlayingList(sources: reply.sources, current: current)
     }
 
     /// Explicit play or pause for each target, with each target's result. The
@@ -248,7 +252,15 @@ private struct ReplyStatus: Decodable {
     let error: Failure?
 }
 
+/// `{"current": {"pid": 1334, "clientBundle": "com.spotify.client"}, "sources": […]}`;
+/// `current` is null when no client is current.
 private struct ListReply: Decodable {
+    struct Current: Decodable {
+        let pid: Int32
+        let clientBundle: String?
+    }
+
+    let current: Current?
     let sources: [Source]
 }
 

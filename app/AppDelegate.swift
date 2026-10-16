@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             library: Bundle.main.privateFrameworksURL!.appending(path: "libNowPlayingPerlHelper.dylib"))
         let coordinator = Coordinator(helper: helper)
         menuBar = MenuBarController(coordinator: coordinator)
-        registerToggleShortcut { Task { await coordinator.toggle() } }
+        registerGlobalShortcut { Task { await coordinator.shortcutPressed() } }
         Task { await helper.start() }
     }
 }

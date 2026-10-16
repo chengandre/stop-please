@@ -1,15 +1,21 @@
 import AppKit
 
-/// The status item and its menu (BUILD_GUIDE §6.4). Opening the menu shows the
+/// The status item and its menu (BUILD_GUIDE §10.3). Opening the menu shows the
 /// last known state at once and refreshes the list; the menu is rebuilt whenever
 /// the coordinator changes, also while it is open.
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
+    /// Group times are 24-hour whatever the locale (BUILD_GUIDE §10.3).
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
     private let coordinator: Coordinator
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
-    /// Enabled only while an entry is selected; updated by the checkboxes without a rebuild.
-    private weak var resumeItem: NSMenuItem?
 
     init(coordinator: Coordinator) {
         self.coordinator = coordinator
@@ -42,15 +48,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(actionItem("Pause All Playing", #selector(pauseAll),
                                 enabled: !coordinator.isBusy && coordinator.sources.contains { $0.state == "Playing" }))
 
-        if !coordinator.paused.isEmpty {
+        if !coordinator.groups.isEmpty {
             menu.addItem(.separator())
-            menu.addItem(.sectionHeader(title: "Paused by This App"))
-            for (index, entry) in coordinator.paused.enumerated() {
-                menu.addItem(checkboxItem(entry, tag: index))
+            menu.addItem(.sectionHeader(title: "Resume"))
+            for group in coordinator.groups {
+                let time = Self.timeFormatter.string(from: group.pausedAt)
+                let names = group.sources.map(\.name).joined(separator: ", ")
+                let item = actionItem("\(time) — \(names)", #selector(resumeGroup(_:)), enabled: !coordinator.isBusy)
+                item.representedObject = group.id
+                item.toolTip = group.sources.map { label($0.name, $0.titleAtPause) }.joined(separator: "\n")
+                menu.addItem(item)
             }
-            let resume = actionItem("Resume Selected", #selector(resumeSelected), enabled: canResume)
-            resumeItem = resume
-            menu.addItem(resume)
         }
 
         if !coordinator.messages.isEmpty || coordinator.routeWarning != nil {
@@ -70,10 +78,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Pause Playing", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-    }
-
-    private var canResume: Bool {
-        !coordinator.isBusy && coordinator.paused.contains(where: \.selected)
     }
 
     /// "Spotify — To My Youth", with long titles shortened.
@@ -96,34 +100,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return item
     }
 
-    /// A checkbox in a view, so clicking it keeps the menu open and several entries
-    /// can be toggled in one opening. `tag` is the entry's index in
-    /// `coordinator.paused`; every change to that list rebuilds the menu.
-    private func checkboxItem(_ entry: PausedEntry, tag: Int) -> NSMenuItem {
-        let checkbox = NSButton(checkboxWithTitle: label(entry.name, entry.titleAtPause),
-                                target: self, action: #selector(toggleEntry(_:)))
-        checkbox.state = entry.selected ? .on : .off
-        checkbox.tag = tag
-        checkbox.sizeToFit()
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: checkbox.frame.width + 28, height: checkbox.frame.height + 6))
-        checkbox.setFrameOrigin(NSPoint(x: 14, y: 3))
-        view.addSubview(checkbox)
-        let item = NSMenuItem()
-        item.view = view
-        return item
-    }
-
-    @objc private func toggleEntry(_ sender: NSButton) {
-        coordinator.setSelected(sender.state == .on, for: coordinator.paused[sender.tag].id)
-        resumeItem?.isEnabled = canResume
-    }
-
     @objc private func pauseAll() {
         Task { await coordinator.pauseAll() }
     }
 
-    @objc private func resumeSelected() {
-        Task { await coordinator.resumeSelected() }
+    /// The group is found by id, not position: groups can change while a request runs.
+    @objc private func resumeGroup(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? PausedGroup.ID else { return }
+        Task { await coordinator.resume(groupID: id) }
     }
 
     @objc private func retry() {

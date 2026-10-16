@@ -28,6 +28,14 @@ struct Source: Decodable, Sendable {
     var id: SourceID? { clientBundle.map { SourceID(pid: pid, clientBundle: $0) } }
 }
 
+/// The helper's `list` reply.
+struct NowPlayingList: Sendable {
+    let sources: [Source]
+    /// The system's current Now Playing source, where the Play/Pause key goes. Nil
+    /// when there is none, or when it has no client bundle and cannot be commanded.
+    let current: SourceID?
+}
+
 enum CommandAction: String, Encodable, Sendable {
     case play, pause
 }
