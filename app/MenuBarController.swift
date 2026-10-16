@@ -48,7 +48,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     init(coordinator: Coordinator) {
         self.coordinator = coordinator
         super.init()
-        statusItem.button?.image = NSImage(systemSymbolName: "pause.circle", accessibilityDescription: "Pause Playing")
+        // A template image from the asset catalog; its shadow is partly transparent.
+        let icon = NSImage(named: "MenuBarIcon")!
+        icon.accessibilityDescription = "Pause Playing"
+        statusItem.button?.image = icon
         menu.delegate = self
         menu.autoenablesItems = false
         statusItem.menu = menu
