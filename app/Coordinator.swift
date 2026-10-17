@@ -147,8 +147,8 @@ final class Coordinator {
 
     /// The shortcut (BUILD_GUIDE §10.1): pause whatever is playing; otherwise resume
     /// the only group, or open the chooser for several; otherwise do what the
-    /// Play/Pause key would. Carbon has already swallowed the press, so the last
-    /// case is handled here.
+    /// Play/Pause key would. The shortcut has already swallowed the press, so the
+    /// last case is handled here.
     func shortcutPressed() async {
         await perform {
             let current: SourceID?

@@ -17,19 +17,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             library: Bundle.main.privateFrameworksURL!.appending(path: "libNowPlayingPerlHelper.dylib"))
         let coordinator = Coordinator(helper: helper)
         let icons = AppIconCache()
-        menuBar = MenuBarController(coordinator: coordinator, icons: icons)
         let chooser = GroupChooser(icons: icons)
+        let shortcuts = ShortcutController {
+            // A press while the chooser is open is ignored (BUILD_GUIDE §10.5).
+            guard !chooser.isOpen else { return }
+            Task { await coordinator.shortcutPressed() }
+        }
+        menuBar = MenuBarController(coordinator: coordinator, shortcuts: shortcuts, icons: icons)
         chooser.onPick = { id in Task { await coordinator.resume(groupID: id) } }
         coordinator.onChooseGroup = { chooser.show(coordinator.groups) }
         self.chooser = chooser
         let pill = ConfirmationPill(icons: icons)
         coordinator.onConfirm = { pill.show($0) }
         self.pill = pill
-        registerGlobalShortcut {
-            // A press while the chooser is open is ignored (BUILD_GUIDE §10.5).
-            guard !chooser.isOpen else { return }
-            Task { await coordinator.shortcutPressed() }
-        }
         Task { await helper.start() }
     }
 }

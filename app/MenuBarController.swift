@@ -27,15 +27,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return image
     }()
 
+    /// The orange ⚠ of the route warning and "Accessibility Needed…".
+    private static let warningImage = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
+                                              accessibilityDescription: "Warning")?
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemOrange]))
+
     private let coordinator: Coordinator
+    private let shortcuts: ShortcutController
     private let icons: AppIconCache
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
     /// The group row showing "Resume"; cleared when the highlight moves.
     private weak var highlightedGroupItem: NSMenuItem?
 
-    init(coordinator: Coordinator, icons: AppIconCache) {
+    init(coordinator: Coordinator, shortcuts: ShortcutController, icons: AppIconCache) {
         self.coordinator = coordinator
+        self.shortcuts = shortcuts
         self.icons = icons
         super.init()
         // A template image from the asset catalog; its shadow is partly transparent.
@@ -46,10 +53,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.autoenablesItems = false
         statusItem.menu = menu
         coordinator.onChange = { [weak self] in self?.rebuild() }
+        shortcuts.onChange = { [weak self] in self?.rebuild() }
         rebuild()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        shortcuts.update()
         Task { await coordinator.refresh() }
     }
 
@@ -73,11 +82,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         let canPause = !routeBroken && coordinator.sources.contains { $0.state == "Playing" }
         let pauseAllItem = actionItem("Pause All Playing", #selector(pauseAll), enabled: !coordinator.isBusy && canPause)
-        // Shows the shortcut like ⌘Q. While the menu is open it also triggers Pause All,
-        // which is what the shortcut does while something is playing. A media-key
-        // shortcut cannot be a key equivalent; Phase 11 shows that one as a badge.
-        pauseAllItem.keyEquivalent = "p"
-        pauseAllItem.keyEquivalentModifierMask = [.control, .option, .command]
+        // Shows the active shortcut. The keyboard one is a key equivalent, drawn like
+        // ⌘Q; while the menu is open it also triggers Pause All, which is what the
+        // shortcut does while something is playing. Play/Pause is a system event,
+        // not a character, so the media-key shortcut is a badge instead.
+        if shortcuts.mediaKeyActive {
+            pauseAllItem.badge = NSMenuItemBadge(string: shortcuts.mediaKeyBadge)
+        } else {
+            pauseAllItem.keyEquivalent = "p"
+            pauseAllItem.keyEquivalentModifierMask = [.control, .option, .command]
+        }
         menu.addItem(pauseAllItem)
 
         if !coordinator.groups.isEmpty {
@@ -97,13 +111,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
             if let warning = coordinator.routeWarning {
                 let item = infoItem(warning.text)
-                item.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")?
-                    .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemOrange]))
+                item.image = Self.warningImage
                 menu.addItem(item)
                 if warning.canRetry {
                     menu.addItem(actionItem("Retry", #selector(retry), enabled: true))
                 }
             }
+        }
+
+        if shortcuts.accessibilityNeeded {
+            menu.addItem(.separator())
+            let item = actionItem("Accessibility Needed…", #selector(requestAccessibility), enabled: true)
+            item.image = Self.warningImage
+            menu.addItem(item)
         }
 
         menu.addItem(.separator())
@@ -214,5 +234,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func retry() {
         Task { await coordinator.retry() }
+    }
+
+    @objc private func requestAccessibility() {
+        shortcuts.requestAccessibility()
     }
 }
