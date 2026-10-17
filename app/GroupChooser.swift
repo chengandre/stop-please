@@ -39,7 +39,7 @@ final class GroupChooser: NSObject, NSWindowDelegate {
         panel.delegate = self
         panel.onKeyDown = { [weak self] event in self?.handleKey(event) }
 
-        let material = NSVisualEffectView.floatingPanelBackground(cornerRadius: 20)
+        let material = NSVisualEffectView.floatingPanelBackground(cornerRadius: 30)
         hosting.translatesAutoresizingMaskIntoConstraints = false
         material.addSubview(hosting)
         NSLayoutConstraint.activate([
@@ -162,9 +162,9 @@ private struct ChooserView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Pause Playing")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(EdgeInsets(top: 0, leading: 8, bottom: 6, trailing: 0))
+                .padding(EdgeInsets(top: 0, leading: 12, bottom: 9, trailing: 0))
             ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                 row(group, selected: index == selection.index)
                     .onHover { inside in
@@ -173,32 +173,32 @@ private struct ChooserView: View {
                     .onTapGesture { onPick(group.id) }
             }
         }
-        .padding(16)
+        .padding(24)
         // Wider only when a group has many apps.
-        .frame(minWidth: 240)
+        .frame(minWidth: 360)
     }
 
     /// "15:42" plus one icon per app, like the menu's group rows. The selected row
     /// has an accent outline over a light accent fill.
     private func row(_ group: PausedGroup, selected: Bool) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 15) {
             Text(group.timeText)
-                .font(.system(size: 14, weight: selected ? .semibold : .regular))
+                .font(.system(size: 21, weight: selected ? .semibold : .regular))
                 .monospacedDigit()
-                .frame(width: 44, alignment: .leading)
-            HStack(spacing: 4) {
+                .frame(width: 66, alignment: .leading)
+            HStack(spacing: 6) {
                 ForEach(group.sources, id: \.id) { source in
-                    Image(nsImage: icons.icon(source.appBundle, size: 32))
+                    Image(nsImage: icons.icon(source.appBundle, size: 48))
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 48)
-        .background(selected ? Color.accentColor.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 12)
+        .frame(height: 72)
+        .background(selected ? Color.accentColor.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 12))
         .overlay {
             if selected {
-                RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor, lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 2.5)
             }
         }
         .contentShape(Rectangle())

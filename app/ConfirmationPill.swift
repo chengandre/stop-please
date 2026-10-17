@@ -7,7 +7,7 @@ import SwiftUI
 /// focus, and lets clicks through. A new action replaces it and restarts the timer.
 @MainActor
 final class ConfirmationPill {
-    private static let height: CGFloat = 44
+    private static let height: CGFloat = 66
 
     private let icons: AppIconCache
     private let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
@@ -83,14 +83,14 @@ private struct PillView: View {
     let icons: AppIconCache
 
     var body: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 4) {
+        HStack(spacing: 15) {
+            HStack(spacing: 6) {
                 if confirmation.apps.isEmpty {
                     // Nothing changed or nothing was sent (H5).
                     Image(systemName: "pause.circle")
-                        .font(.system(size: 26))
+                        .font(.system(size: 39))
                         .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 48, height: 48)
                 } else {
                     ForEach(Array(confirmation.apps.enumerated()), id: \.offset) { _, app in
                         icon(app)
@@ -98,22 +98,22 @@ private struct PillView: View {
                 }
             }
             Text(confirmation.text)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 21, weight: .semibold))
         }
-        .padding(EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 16))
+        .padding(EdgeInsets(top: 9, leading: 9, bottom: 9, trailing: 24))
     }
 
     /// A source that did not change is dimmed with an amber "!"; the menu says why.
     private func icon(_ app: Confirmation.App) -> some View {
-        Image(nsImage: icons.icon(app.appBundle, size: 32))
+        Image(nsImage: icons.icon(app.appBundle, size: 48))
             .opacity(app.failed ? 0.4 : 1)
             .overlay(alignment: .bottomTrailing) {
                 if app.failed {
                     Image(systemName: "exclamationmark.circle.fill")
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(.white, .orange)
-                        .font(.system(size: 14, weight: .bold))
-                        .offset(x: 3, y: 3)
+                        .font(.system(size: 21, weight: .bold))
+                        .offset(x: 5, y: 5)
                 }
             }
     }
