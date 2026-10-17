@@ -2,8 +2,9 @@ import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 
-/// The floating "Resume" panel a shortcut press opens when several groups are saved
-/// (BUILD_GUIDE §10.5, mockups C1–C3). The newest group starts selected. ↑/↓ move,
+/// The floating panel a shortcut press opens when several groups are saved
+/// (BUILD_GUIDE §10.5): mockups C1–C3 with a small app title instead of the
+/// header, sized and selected, with larger icons. The newest group starts selected. ↑/↓ move,
 /// Tab and ⇧Tab cycle, Enter or a click resumes, and Esc, a click outside, or
 /// opening the menu dismisses it without changes.
 ///
@@ -43,7 +44,7 @@ final class GroupChooser: NSObject, NSWindowDelegate {
         material.blendingMode = .behindWindow
         // Otherwise the material draws as inactive (flat) in an app that is never active.
         material.state = .active
-        material.maskImage = Self.roundedMask(radius: 12)
+        material.maskImage = Self.roundedMask(radius: 20)
         hosting.translatesAutoresizingMaskIntoConstraints = false
         material.addSubview(hosting)
         NSLayoutConstraint.activate([
@@ -153,18 +154,12 @@ private struct ChooserView: View {
     let icons: AppIconCache
     let onPick: (PausedGroup.ID) -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Resume")
-                Spacer()
-                Text("⇥ ↩")
-            }
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .padding(EdgeInsets(top: 4, leading: 9, bottom: 5, trailing: 9))
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Pause Playing")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(EdgeInsets(top: 0, leading: 8, bottom: 6, trailing: 0))
             ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                 row(group, selected: index == selection.index)
                     .onHover { inside in
@@ -173,29 +168,34 @@ private struct ChooserView: View {
                     .onTapGesture { onPick(group.id) }
             }
         }
-        .padding(5)
-        .frame(width: 200)
+        .padding(16)
+        // Wider only when a group has many apps.
+        .frame(minWidth: 240)
     }
 
     /// "15:42" plus one icon per app, like the menu's group rows. The selected row
-    /// is gray, not the accent color.
+    /// has an accent outline over a light accent fill.
     private func row(_ group: PausedGroup, selected: Bool) -> some View {
         HStack(spacing: 10) {
             Text(group.timeText)
-                .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                .font(.system(size: 14, weight: selected ? .semibold : .regular))
                 .monospacedDigit()
-                .frame(width: 40, alignment: .leading)
-            HStack(spacing: 3) {
+                .frame(width: 44, alignment: .leading)
+            HStack(spacing: 4) {
                 ForEach(group.sources, id: \.id) { source in
-                    Image(nsImage: icons.icon(source.appBundle, size: 16))
+                    Image(nsImage: icons.icon(source.appBundle, size: 32))
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 9)
-        .frame(height: 28)
-        .background(selected ? Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.1) : .clear,
-                    in: RoundedRectangle(cornerRadius: 7))
+        .padding(.horizontal, 8)
+        .frame(height: 48)
+        .background(selected ? Color.accentColor.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            if selected {
+                RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor, lineWidth: 1.5)
+            }
+        }
         .contentShape(Rectangle())
     }
 }
