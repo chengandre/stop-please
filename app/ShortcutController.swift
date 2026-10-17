@@ -8,23 +8,22 @@ private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: 
 /// or the media-key shortcut when it is chosen and macOS allows its tap. Only the
 /// active one is installed, so the other reaches other apps as usual.
 ///
-/// The choice is the `shortcut` user default, `keyboard` (the default) or
-/// `mediaKey`; Settings sets it in Phase 11 step 2.
+/// Saved in user defaults: `shortcut` (`keyboard`, the default, or `mediaKey`),
+/// `keyboardKeyCode` and `keyboardModifiers` (default ⌃⌥⌘P), and
+/// `mediaKeyModifiers` (default ⇧). Modifiers are `NSEvent.ModifierFlags` raw
+/// values.
 ///
 /// A revoke must remove the tap before the next click: macOS keeps a revoked tap
 /// in the event stream and holds each event it subscribes to, mouse-button events
 /// included, until the tap times out after seconds (PERL_HELPER.md, "Media-key
 /// gate"). So while the media key is chosen the grant is checked every second,
 /// shortly after every Accessibility change notice, and when the menu opens.
-@MainActor
+@MainActor @Observable
 final class ShortcutController {
     enum Choice: String {
         case keyboard, mediaKey
     }
 
-    /// Recorded in Settings from Phase 11 step 2.
-    private static let mediaKeyModifiers: NSEvent.ModifierFlags = .shift
-    private static let mediaKeyName = symbols(mediaKeyModifiers) + " Play/Pause"
     /// After timeouts the tap is created again at most this many times within
     /// `timeoutWindow`; one more timeout leaves it off until the Accessibility
     /// list changes or the app relaunches. Caps the freezes if macOS ever allows
@@ -32,59 +31,140 @@ final class ShortcutController {
     private static let timeoutsAllowed = 2
     private static let timeoutWindow: TimeInterval = 30
 
-    let choice: Choice
-    /// Called whenever what the menu shows changes.
-    var onChange: () -> Void = {}
-
-    private let keyboard: GlobalShortcut
-    private let mediaKey: MediaKeyTap
+    private(set) var choice: Choice
+    private(set) var keyboardShortcut: KeyboardShortcut
+    private(set) var mediaKeyModifiers: NSEvent.ModifierFlags
     private(set) var mediaKeyActive = false
+    /// While Settings records a shortcut, presses do nothing, and the keyboard
+    /// shortcut is unregistered so that its keys reach the recorder.
+    private(set) var isRecording = false
+    /// Called whenever what the menu shows changes.
+    @ObservationIgnored var onChange: () -> Void = {}
+
+    private let action: () -> Void
+    private let keyboard = GlobalShortcut()
+    private let mediaKey: MediaKeyTap
     /// Until Accessibility has been seen granted, `AXIsProcessTrusted` decides
     /// whether to try the tap: hops saw a tap created before the first grant show
     /// macOS's "would like to control this Mac" dialog. After that, creating a
     /// tap decides, since `AXIsProcessTrusted` can keep a stale answer.
-    private var grantedOnce = false
-    private var recentTimeouts: [Date] = []
-    private var stoppedAfterTimeouts = false
+    @ObservationIgnored private var grantedOnce = false
+    @ObservationIgnored private var recentTimeouts: [Date] = []
+    @ObservationIgnored private var stoppedAfterTimeouts = false
     /// The last probe answer, so that only changes are logged.
-    private var lastProbe: Bool?
+    @ObservationIgnored private var lastProbe: Bool?
     /// The prompt adds the app to the Accessibility list only while it has no
     /// entry, and only once per launch (AltTab, Mac Mouse Fix), so it is asked
     /// at most once per run, as hops does.
-    private var askedThisRun = false
+    @ObservationIgnored private var askedThisRun = false
+    /// The grant checks run only while the media key is chosen.
+    @ObservationIgnored private var grantObserver: NSObjectProtocol?
+    @ObservationIgnored private var grantTimer: Timer?
 
     /// The media-key shortcut as the menu shows it, e.g. "⇧⏯".
-    var mediaKeyBadge: String { Self.symbols(mediaKey.modifiers) + "⏯" }
+    var mediaKeyBadge: String { mediaKeyModifiers.symbols + "⏯" }
 
-    /// Shown in the menu while the media-key shortcut is chosen but its tap is off.
+    /// Shown in the menu and Settings while the media-key shortcut is chosen but
+    /// its tap is off.
     var accessibilityNeeded: Bool { choice == .mediaKey && !mediaKeyActive }
 
+    private var mediaKeyName: String { mediaKeyModifiers.symbols + " Play/Pause" }
+
     init(action: @escaping () -> Void) {
-        choice = Choice(rawValue: UserDefaults.standard.string(forKey: "shortcut") ?? "") ?? .keyboard
-        keyboard = GlobalShortcut {
-            logger.info("Pressed ⌃⌥⌘P")
-            action()
+        let defaults = UserDefaults.standard
+        choice = Choice(rawValue: defaults.string(forKey: "shortcut") ?? "") ?? .keyboard
+        if let keyCode = defaults.object(forKey: "keyboardKeyCode") as? Int,
+           let modifiers = defaults.object(forKey: "keyboardModifiers") as? Int {
+            keyboardShortcut = KeyboardShortcut(keyCode: keyCode, modifiers: NSEvent.ModifierFlags(rawValue: UInt(modifiers)))
+        } else {
+            keyboardShortcut = .standard
         }
-        mediaKey = MediaKeyTap(modifiers: Self.mediaKeyModifiers) {
-            logger.info("Pressed \(Self.mediaKeyName, privacy: .public)")
-            action()
+        let mediaKeyModifiers = (defaults.object(forKey: "mediaKeyModifiers") as? Int)
+            .map { NSEvent.ModifierFlags(rawValue: UInt($0)) } ?? .shift
+        self.mediaKeyModifiers = mediaKeyModifiers
+        self.action = action
+        mediaKey = MediaKeyTap(modifiers: mediaKeyModifiers)
+        keyboard.action = { [weak self] in
+            guard let self else { return }
+            pressed(keyboardShortcut.name)
         }
-        logger.info("Chosen \(self.choice.rawValue, privacy: .public)")
-        keyboard.register()
-        guard choice == .mediaKey else { return }
+        mediaKey.action = { [weak self] in
+            guard let self else { return }
+            pressed(mediaKeyName)
+        }
         mediaKey.onDisabled = { [weak self] byTimeout in self?.tapDisabled(byTimeout: byTimeout) }
+        logger.info("Chosen \(self.choice.rawValue, privacy: .public): \(self.keyboardShortcut.name, privacy: .public), \(self.mediaKeyName, privacy: .public)")
+        registerKeyboard()
+        guard choice == .mediaKey else { return }
         // Phase 11 step 3 moves this to the moment setup chooses the media key.
         if !AXIsProcessTrusted() {
             requestAccessibility()
         }
-        watchGrant()
+        startGrantChecks()
         update()
     }
 
-    /// "Accessibility Needed…": the first time in a run, macOS's prompt, whose
-    /// Open System Settings button lists the app (switched off) and opens the
-    /// pane; after that, the pane. An app removed from the list after the prompt
-    /// was used comes back when it relaunches.
+    /// From Settings. Choosing the media key asks for Accessibility the first time
+    /// in a run, unless it looks granted.
+    func choose(_ newChoice: Choice) {
+        guard newChoice != choice else { return }
+        choice = newChoice
+        UserDefaults.standard.set(newChoice.rawValue, forKey: "shortcut")
+        logger.info("Chosen \(newChoice.rawValue, privacy: .public)")
+        switch newChoice {
+        case .mediaKey:
+            recentTimeouts = []
+            stoppedAfterTimeouts = false
+            if !askedThisRun, !AXIsProcessTrusted() {
+                requestAccessibility()
+            }
+            startGrantChecks()
+            update()
+        case .keyboard:
+            stopGrantChecks()
+            if mediaKeyActive {
+                mediaKey.stop()
+                setMediaKeyActive(false)
+            }
+        }
+        onChange()
+    }
+
+    func beginRecording() {
+        isRecording = true
+        keyboard.unregister()
+        logger.info("Recording started")
+    }
+
+    func endRecording() {
+        isRecording = false
+        if !mediaKeyActive {
+            registerKeyboard()
+        }
+        logger.info("Recording ended")
+        onChange()
+    }
+
+    /// While recording.
+    func record(_ shortcut: KeyboardShortcut) {
+        keyboardShortcut = shortcut
+        UserDefaults.standard.set(shortcut.keyCode, forKey: "keyboardKeyCode")
+        UserDefaults.standard.set(Int(shortcut.modifiers.rawValue), forKey: "keyboardModifiers")
+        logger.info("Recorded \(shortcut.name, privacy: .public)")
+    }
+
+    /// While recording.
+    func record(mediaKeyModifiers modifiers: NSEvent.ModifierFlags) {
+        mediaKeyModifiers = modifiers
+        mediaKey.modifiers = modifiers
+        UserDefaults.standard.set(Int(modifiers.rawValue), forKey: "mediaKeyModifiers")
+        logger.info("Recorded \(self.mediaKeyName, privacy: .public)")
+    }
+
+    /// "Accessibility Needed…" and Settings' Open System Settings…: the first time
+    /// in a run, macOS's prompt, whose Open System Settings button lists the app
+    /// (switched off) and opens the pane; after that, the pane. An app removed
+    /// from the list after the prompt was used comes back when it relaunches.
     func requestAccessibility() {
         if askedThisRun {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
@@ -96,12 +176,21 @@ final class ShortcutController {
         }
     }
 
+    private func pressed(_ name: String) {
+        guard !isRecording else {
+            logger.info("Pressed \(name, privacy: .public) while recording; ignored")
+            return
+        }
+        logger.info("Pressed \(name, privacy: .public)")
+        action()
+    }
+
     /// `com.apple.accessibility.api` is undocumented and arrives when any app's
     /// Accessibility switch changes, before tccd has written the change (AltTab),
     /// so the checks follow it by 0.1 s and 0.5 s. Removing the app from the list
     /// may post nothing; the one-second check covers that.
-    private func watchGrant() {
-        DistributedNotificationCenter.default().addObserver(
+    private func startGrantChecks() {
+        grantObserver = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("com.apple.accessibility.api"), object: nil, queue: .main
         ) { [weak self] _ in
             logger.info("Accessibility list changed")
@@ -119,6 +208,16 @@ final class ShortcutController {
         }
         // Common modes, so checks continue while the menu is open.
         RunLoop.main.add(timer, forMode: .common)
+        grantTimer = timer
+    }
+
+    private func stopGrantChecks() {
+        if let grantObserver {
+            DistributedNotificationCenter.default().removeObserver(grantObserver)
+        }
+        grantObserver = nil
+        grantTimer?.invalidate()
+        grantTimer = nil
     }
 
     /// While the tap runs, removes it if a probe says macOS no longer allows it.
@@ -170,17 +269,16 @@ final class ShortcutController {
         if active {
             keyboard.unregister()
         } else {
-            keyboard.register()
+            registerKeyboard()
         }
-        logger.info("Active shortcut: \(active ? Self.mediaKeyName : "⌃⌥⌘P", privacy: .public)")
+        logger.info("Active shortcut: \(active ? self.mediaKeyName : self.keyboardShortcut.name, privacy: .public)")
         onChange()
     }
 
-    /// "⌃⇧" for control and shift, in the order macOS menus use.
-    private static func symbols(_ modifiers: NSEvent.ModifierFlags) -> String {
-        [(NSEvent.ModifierFlags.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘")]
-            .filter { modifiers.contains($0.0) }
-            .map(\.1)
-            .joined()
+    /// Not while recording: the recorder needs the keys, and `endRecording`
+    /// registers it.
+    private func registerKeyboard() {
+        guard !isRecording else { return }
+        keyboard.register(keyboardShortcut)
     }
 }

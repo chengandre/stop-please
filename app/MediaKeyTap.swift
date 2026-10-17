@@ -9,16 +9,14 @@ private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: 
 /// the tap cannot be created (PERL_HELPER.md, "Event-tap spike").
 @MainActor
 final class MediaKeyTap {
-    /// Only these take part in the match: Caps Lock and fn are ignored, and so are
-    /// device bits such as the `0x100` one keyboard adds to every event.
-    private static let matchedModifiers: NSEvent.ModifierFlags = [.shift, .control, .option, .command]
     /// `NX_SUBTYPE_AUX_CONTROL_BUTTONS`: media keys.
     private static let mediaKeySubtype: Int16 = 8
     /// `NX_KEYTYPE_PLAY`.
     private static let playKey = 16
 
-    let modifiers: NSEvent.ModifierFlags
-    private let action: () -> Void
+    /// Recorded in Settings; a change applies to the next press.
+    var modifiers: NSEvent.ModifierFlags
+    var action: () -> Void = {}
     /// Called when macOS turned the tap off; true for a timeout. The tap is left
     /// off: turning it back on after a revoke froze every click (PERL_HELPER.md,
     /// "Media-key gate").
@@ -30,9 +28,8 @@ final class MediaKeyTap {
     /// released first: a stray key-up should not reach the player.
     private var swallowingKeyUp = false
 
-    init(modifiers: NSEvent.ModifierFlags, action: @escaping () -> Void) {
+    init(modifiers: NSEvent.ModifierFlags) {
         self.modifiers = modifiers
-        self.action = action
     }
 
     /// Whether macOS still lets this process create an active tap, which it does
@@ -100,7 +97,7 @@ final class MediaKeyTap {
         else { return false }
         // data1: key code in the high 16 bits, 0xA down / 0xB up, bit 0 repeat.
         switch event.data1 >> 8 & 0xFF {
-        case 0xA where event.modifierFlags.intersection(Self.matchedModifiers) == modifiers:
+        case 0xA where event.modifierFlags.intersection(.shortcutModifiers) == modifiers:
             swallowingKeyUp = true
             if event.data1 & 1 == 0 { action() }
             return true

@@ -34,15 +34,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private let coordinator: Coordinator
     private let shortcuts: ShortcutController
+    private let settings: SettingsWindow
     private let icons: AppIconCache
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
     /// The group row showing "Resume"; cleared when the highlight moves.
     private weak var highlightedGroupItem: NSMenuItem?
 
-    init(coordinator: Coordinator, shortcuts: ShortcutController, icons: AppIconCache) {
+    init(coordinator: Coordinator, shortcuts: ShortcutController, settings: SettingsWindow, icons: AppIconCache) {
         self.coordinator = coordinator
         self.shortcuts = shortcuts
+        self.settings = settings
         self.icons = icons
         super.init()
         // A template image from the asset catalog; its shadow is partly transparent.
@@ -89,8 +91,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if shortcuts.mediaKeyActive {
             pauseAllItem.badge = NSMenuItemBadge(string: shortcuts.mediaKeyBadge)
         } else {
-            pauseAllItem.keyEquivalent = "p"
-            pauseAllItem.keyEquivalentModifierMask = [.control, .option, .command]
+            pauseAllItem.keyEquivalent = shortcuts.keyboardShortcut.keyEquivalent
+            pauseAllItem.keyEquivalentModifierMask = shortcuts.keyboardShortcut.modifiers
         }
         menu.addItem(pauseAllItem)
 
@@ -127,6 +129,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let settingsItem = actionItem("Settings…", #selector(openSettings), enabled: true)
+        settingsItem.keyEquivalent = ","
+        menu.addItem(settingsItem)
         menu.addItem(withTitle: "Quit Pause Playing", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
@@ -238,5 +243,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func requestAccessibility() {
         shortcuts.requestAccessibility()
+    }
+
+    @objc private func openSettings() {
+        settings.show()
     }
 }

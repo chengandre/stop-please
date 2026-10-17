@@ -23,7 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard !chooser.isOpen else { return }
             Task { await coordinator.shortcutPressed() }
         }
-        menuBar = MenuBarController(coordinator: coordinator, shortcuts: shortcuts, icons: icons)
+        menuBar = MenuBarController(coordinator: coordinator, shortcuts: shortcuts,
+                                    settings: SettingsWindow(shortcuts: shortcuts), icons: icons)
         chooser.onPick = { id in Task { await coordinator.resume(groupID: id) } }
         coordinator.onChooseGroup = { chooser.show(coordinator.groups) }
         self.chooser = chooser
