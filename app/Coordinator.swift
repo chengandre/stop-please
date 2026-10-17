@@ -20,6 +20,19 @@ struct PausedGroup: Identifiable {
     let sources: [PausedSource]
 }
 
+extension PausedGroup {
+    /// Group times are 24-hour whatever the locale (BUILD_GUIDE §10.3).
+    @MainActor private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    /// "15:42", as the menu and the chooser show it.
+    @MainActor var timeText: String { Self.timeFormatter.string(from: pausedAt) }
+}
+
 /// Something wrong with the route itself rather than with one source.
 struct RouteWarning {
     let text: String
@@ -38,6 +51,9 @@ final class Coordinator {
     private let helper: HelperClient
     /// Called after every change the menu shows.
     var onChange: () -> Void = {}
+    /// Called by a shortcut press with nothing playing and several groups saved.
+    /// The chooser resumes the picked one through `resume(groupID:)` (BUILD_GUIDE §10.5).
+    var onChooseGroup: () -> Void = {}
 
     /// The last listed sources, for display.
     private(set) var sources: [Source] = []
@@ -99,16 +115,18 @@ final class Coordinator {
     }
 
     /// The shortcut (BUILD_GUIDE §10.1): pause whatever is playing; otherwise resume
-    /// a group; otherwise do what the Play/Pause key would. Carbon has already
-    /// swallowed the press, so the last case is handled here.
+    /// the only group, or open the chooser for several; otherwise do what the
+    /// Play/Pause key would. Carbon has already swallowed the press, so the last
+    /// case is handled here.
     func shortcutPressed() async {
         await perform {
             let current = try await updateSources()
             if sources.contains(where: { $0.state == "Playing" && $0.id != nil }) {
                 try await pausePlaying()
-            } else if let newest = groups.first {
-                // The newest group until the chooser picks one (Phase 10).
-                try await resume(newest)
+            } else if groups.count > 1 {
+                onChooseGroup()
+            } else if let group = groups.first {
+                try await resume(group)
             } else if let current {
                 // With no current source nothing is sent, so Music.app never opens.
                 try await play(current)

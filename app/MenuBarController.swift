@@ -1,5 +1,4 @@
 import AppKit
-import UniformTypeIdentifiers
 
 /// The status item and its menu (BUILD_GUIDE §10.3). Opening the menu shows the
 /// last known state at once and refreshes the list; the menu is rebuilt whenever
@@ -9,14 +8,6 @@ import UniformTypeIdentifiers
 /// and "Resume" are badges, the shortcut is a key equivalent.
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
-    /// Group times are 24-hour whatever the locale (BUILD_GUIDE §10.3).
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
-
     /// Longer titles end in "…": about 30 Latin or 15 Chinese characters.
     private static let maxTitleWidth: CGFloat = 220
 
@@ -37,16 +28,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }()
 
     private let coordinator: Coordinator
+    private let icons: AppIconCache
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
-    /// App icons by bundle ID. The menu is rebuilt on every refresh; the lookup
-    /// reads the app bundle from disk.
-    private var appIcons: [String: NSImage] = [:]
     /// The group row showing "Resume"; cleared when the highlight moves.
     private weak var highlightedGroupItem: NSMenuItem?
 
-    init(coordinator: Coordinator) {
+    init(coordinator: Coordinator, icons: AppIconCache) {
         self.coordinator = coordinator
+        self.icons = icons
         super.init()
         // A template image from the asset catalog; its shadow is partly transparent.
         let icon = NSImage(named: "MenuBarIcon")!
@@ -127,7 +117,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let text = if let title = source.title, !title.isEmpty { shorten(title) } else { name }
         let canCommand = source.id != nil && ["Playing", "Paused"].contains(source.state)
         let item = actionItem(text, #selector(playOrPause(_:)), enabled: !coordinator.isBusy && canCommand)
-        item.image = appIcon(source.appBundle, size: 26)
+        item.image = icons.icon(source.appBundle, size: 26)
         item.representedObject = source.id
         item.badge = NSMenuItemBadge(string: source.state)
         return item
@@ -136,11 +126,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// "15:42" plus one icon per app. "Resume" appears while it is highlighted
     /// (`menu(_:willHighlight:)`), and the tooltip lists the titles.
     private func groupItem(_ group: PausedGroup) -> NSMenuItem {
-        let title = NSMutableAttributedString(string: Self.timeFormatter.string(from: group.pausedAt) + "  ",
+        let title = NSMutableAttributedString(string: group.timeText + "  ",
                                               attributes: [.font: Self.timeFont])
         for source in group.sources {
             let icon = NSTextAttachment()
-            icon.image = appIcon(source.appBundle, size: 16)
+            icon.image = icons.icon(source.appBundle, size: 16)
             // Centered on the digits rather than sitting on the baseline.
             icon.bounds = NSRect(x: 0, y: (Self.timeFont.capHeight - 16) / 2, width: 16, height: 16)
             title.append(NSAttributedString(attachment: icon))
@@ -165,24 +155,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.itemChanged(item)
             highlightedGroupItem = item
         }
-    }
-
-    /// The icon of the app with this bundle ID, or the generic app icon. Looked up
-    /// by bundle, so it stays after the app quits.
-    private func appIcon(_ bundle: String?, size: CGFloat) -> NSImage {
-        var icon = NSWorkspace.shared.icon(for: .applicationBundle)
-        if let bundle {
-            if let cached = appIcons[bundle] {
-                icon = cached
-            } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) {
-                icon = NSWorkspace.shared.icon(forFile: url.path)
-                appIcons[bundle] = icon
-            }
-        }
-        // Sized on a copy: the cached image is shared by both sizes.
-        let sized = icon.copy() as! NSImage
-        sized.size = NSSize(width: size, height: size)
-        return sized
     }
 
     /// "Spotify — To My Youth", with long titles shortened.

@@ -2,6 +2,7 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController!
+    private var chooser: GroupChooser!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A second instance would run a second helper whose override windows could
@@ -14,8 +15,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             script: Bundle.main.url(forResource: "perl_helper", withExtension: "pl")!,
             library: Bundle.main.privateFrameworksURL!.appending(path: "libNowPlayingPerlHelper.dylib"))
         let coordinator = Coordinator(helper: helper)
-        menuBar = MenuBarController(coordinator: coordinator)
-        registerGlobalShortcut { Task { await coordinator.shortcutPressed() } }
+        let icons = AppIconCache()
+        menuBar = MenuBarController(coordinator: coordinator, icons: icons)
+        let chooser = GroupChooser(icons: icons)
+        chooser.onPick = { id in Task { await coordinator.resume(groupID: id) } }
+        coordinator.onChooseGroup = { chooser.show(coordinator.groups) }
+        self.chooser = chooser
+        registerGlobalShortcut {
+            // A press while the chooser is open is ignored (BUILD_GUIDE §10.5).
+            guard !chooser.isOpen else { return }
+            Task { await coordinator.shortcutPressed() }
+        }
         Task { await helper.start() }
     }
 }
