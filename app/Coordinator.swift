@@ -33,6 +33,29 @@ extension PausedGroup {
     @MainActor var timeText: String { Self.timeFormatter.string(from: pausedAt) }
 }
 
+/// What the confirmation pill shows after a group-level action (BUILD_GUIDE §10.10),
+/// e.g. "Resumed" with Spotify, and Zen dimmed because it didn't respond.
+struct Confirmation {
+    struct App {
+        let appBundle: String?
+        /// It did not change, and the menu has a message saying why.
+        let failed: Bool
+    }
+
+    /// The request failed before anything was sent; the route warning is in the menu.
+    static func requestFailed(_ action: CommandAction) -> Confirmation {
+        Confirmation(text: action == .pause ? "Couldn't Pause" : "Couldn't Resume", apps: [])
+    }
+
+    /// A shortcut press whose `list` failed, before it knew whether to pause or resume.
+    static let unavailable = Confirmation(text: "Unavailable", apps: [])
+
+    let text: String
+    /// Empty when nothing changed or nothing was sent: the pill then shows an empty
+    /// pause glyph instead.
+    let apps: [App]
+}
+
 /// Something wrong with the route itself rather than with one source.
 struct RouteWarning {
     let text: String
@@ -54,6 +77,9 @@ final class Coordinator {
     /// Called by a shortcut press with nothing playing and several groups saved.
     /// The chooser resumes the picked one through `resume(groupID:)` (BUILD_GUIDE §10.5).
     var onChooseGroup: () -> Void = {}
+    /// Called after every group-level action: Pause All, a group resume, and every
+    /// shortcut press except one that opens the chooser. Not after a row click.
+    var onConfirm: (Confirmation) -> Void = { _ in }
 
     /// The last listed sources, for display.
     private(set) var sources: [Source] = []
@@ -82,7 +108,12 @@ final class Coordinator {
 
     func pauseAll() async {
         await perform {
-            try await updateSources()
+            do {
+                try await updateSources()
+            } catch {
+                onConfirm(.requestFailed(.pause))
+                throw error
+            }
             try await pausePlaying()
         }
     }
@@ -120,7 +151,13 @@ final class Coordinator {
     /// case is handled here.
     func shortcutPressed() async {
         await perform {
-            let current = try await updateSources()
+            let current: SourceID?
+            do {
+                current = try await updateSources()
+            } catch {
+                onConfirm(.unavailable)
+                throw error
+            }
             if sources.contains(where: { $0.state == "Playing" && $0.id != nil }) {
                 try await pausePlaying()
             } else if groups.count > 1 {
@@ -128,8 +165,10 @@ final class Coordinator {
             } else if let group = groups.first {
                 try await resume(group)
             } else if let current {
-                // With no current source nothing is sent, so Music.app never opens.
                 try await play(current)
+            } else {
+                // Nothing is sent, so Music.app never opens.
+                confirm(.play, apps: [])
             }
         }
     }
@@ -160,12 +199,17 @@ final class Coordinator {
     /// newest group, evicting the oldest beyond `maxGroups`.
     private func pausePlaying() async throws {
         let playing = sources.filter { $0.state == "Playing" }
+        var apps: [Confirmation.App] = []
         for source in playing where source.id == nil {
             messages.append("Can't control \(displayName(source))")
+            apps.append(Confirmation.App(appBundle: source.appBundle, failed: true))
         }
         let targets = playing.compactMap(\.id)
-        guard !targets.isEmpty else { return }
-        let results = try await helper.command(.pause, targets: targets)
+        guard !targets.isEmpty else {
+            confirm(.pause, apps: apps)
+            return
+        }
+        let results = try await command(.pause, targets: targets)
         log("Pause All", results)
         var paused: [PausedSource] = []
         for source in playing {
@@ -173,10 +217,13 @@ final class Coordinator {
             if result.outcome == .done {
                 paused.append(PausedSource(id: id, name: displayName(source), appBundle: source.appBundle,
                                            titleAtPause: source.title))
+                apps.append(Confirmation.App(appBundle: source.appBundle, failed: false))
             } else if let message = message(for: result.outcome, name: displayName(source)) {
                 messages.append(message)
+                apps.append(Confirmation.App(appBundle: source.appBundle, failed: true))
             }
         }
+        confirm(.pause, apps: apps)
         // A source that will not pause must not create a group on every press and
         // evict the real ones.
         guard !paused.isEmpty else { return }
@@ -192,14 +239,20 @@ final class Coordinator {
     /// for a retry when every attempt failed. A request that fails throws before
     /// this decision, so the group is kept then too.
     private func resume(_ group: PausedGroup) async throws {
-        let results = try await helper.command(.play, targets: group.sources.map(\.id))
+        let results = try await command(.play, targets: group.sources.map(\.id))
         routeWarning = nil
         log("Resume", results)
+        var apps: [Confirmation.App] = []
         for source in group.sources {
-            if let result = results[source.id], let message = message(for: result.outcome, name: source.name) {
+            guard let result = results[source.id] else { continue }
+            if result.outcome == .done {
+                apps.append(Confirmation.App(appBundle: source.appBundle, failed: false))
+            } else if let message = message(for: result.outcome, name: source.name) {
                 messages.append(message)
+                apps.append(Confirmation.App(appBundle: source.appBundle, failed: true))
             }
         }
+        confirm(.play, apps: apps)
         let outcomes = results.values.map(\.outcome)
         let finished = outcomes.contains(.done) || outcomes.allSatisfy { $0 == .skipped || $0 == .notFound }
         if finished {
@@ -210,12 +263,45 @@ final class Coordinator {
 
     /// Play the current source, as the Play/Pause key would with nothing saved.
     private func play(_ current: SourceID) async throws {
-        let results = try await helper.command(.play, targets: [current])
+        let results = try await command(.play, targets: [current])
         log("Play current", results)
-        let name = sources.first { $0.id == current }.map(displayName) ?? current.clientBundle
-        if let result = results[current], let message = message(for: result.outcome, name: name) {
-            messages.append(message)
+        let source = sources.first { $0.id == current }
+        let name = source.map(displayName) ?? current.clientBundle
+        var apps: [Confirmation.App] = []
+        if let result = results[current] {
+            if result.outcome == .done {
+                apps.append(Confirmation.App(appBundle: source?.appBundle, failed: false))
+            } else if let message = message(for: result.outcome, name: name) {
+                messages.append(message)
+                apps.append(Confirmation.App(appBundle: source?.appBundle, failed: true))
+            }
         }
+        confirm(.play, apps: apps)
+    }
+
+    /// A group-level command. When the request fails, nothing was sent; the pill
+    /// says so before the error becomes the route warning.
+    private func command(_ action: CommandAction, targets: [SourceID]) async throws -> [SourceID: TargetResult] {
+        do {
+            return try await helper.command(action, targets: targets)
+        } catch {
+            onConfirm(.requestFailed(action))
+            throw error
+        }
+    }
+
+    /// Show the pill for a finished group-level action. `apps` holds the sources
+    /// that changed and those the menu explains; skipped ones are left out.
+    private func confirm(_ action: CommandAction, apps: [Confirmation.App]) {
+        let text = if apps.contains(where: { !$0.failed }) {
+            action == .pause ? "Paused" : "Resumed"
+        } else if !apps.isEmpty {
+            action == .pause ? "Couldn't Pause" : "Couldn't Resume"
+        } else {
+            // Only reachable for a pause when the list changed after the menu opened.
+            action == .pause ? "Nothing to Pause" : "Nothing to Play"
+        }
+        onConfirm(Confirmation(text: text, apps: apps))
     }
 
     /// List, and return the current source.

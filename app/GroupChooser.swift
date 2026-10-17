@@ -39,12 +39,7 @@ final class GroupChooser: NSObject, NSWindowDelegate {
         panel.delegate = self
         panel.onKeyDown = { [weak self] event in self?.handleKey(event) }
 
-        let material = NSVisualEffectView()
-        material.material = .menu
-        material.blendingMode = .behindWindow
-        // Otherwise the material draws as inactive (flat) in an app that is never active.
-        material.state = .active
-        material.maskImage = Self.roundedMask(radius: 20)
+        let material = NSVisualEffectView.floatingPanelBackground(cornerRadius: 20)
         hosting.translatesAutoresizingMaskIntoConstraints = false
         material.addSubview(hosting)
         NSLayoutConstraint.activate([
@@ -111,18 +106,28 @@ final class GroupChooser: NSObject, NSWindowDelegate {
     private func close() {
         panel.orderOut(nil)
     }
+}
 
-    /// A stretchable rounded rectangle, so the material's corners are clipped.
-    private static func roundedMask(radius: CGFloat) -> NSImage {
+extension NSVisualEffectView {
+    /// The translucent background of the chooser and the confirmation pill: the
+    /// menu material with rounded corners.
+    static func floatingPanelBackground(cornerRadius radius: CGFloat) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .menu
+        view.blendingMode = .behindWindow
+        // Otherwise the material draws as inactive (flat) in an app that is never active.
+        view.state = .active
+        // A stretchable rounded rectangle, so the material's corners are clipped.
         let side = radius * 2 + 1
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+        let mask = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
             NSColor.black.setFill()
             NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
             return true
         }
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        image.resizingMode = .stretch
-        return image
+        mask.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        mask.resizingMode = .stretch
+        view.maskImage = mask
+        return view
     }
 }
 

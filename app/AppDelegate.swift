@@ -3,6 +3,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController!
     private var chooser: GroupChooser!
+    private var pill: ConfirmationPill!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A second instance would run a second helper whose override windows could
@@ -21,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chooser.onPick = { id in Task { await coordinator.resume(groupID: id) } }
         coordinator.onChooseGroup = { chooser.show(coordinator.groups) }
         self.chooser = chooser
+        let pill = ConfirmationPill(icons: icons)
+        coordinator.onConfirm = { pill.show($0) }
+        self.pill = pill
         registerGlobalShortcut {
             // A press while the chooser is open is ignored (BUILD_GUIDE §10.5).
             guard !chooser.isOpen else { return }
