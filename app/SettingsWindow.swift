@@ -31,7 +31,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         if !window.isVisible {
             window.center()
         }
-        NSApp.activate()
+        // Clicking the status menu does not make this app active, so, as for
+        // setup, the cooperative `activate()` would leave the window behind.
+        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -295,9 +297,9 @@ private struct RecorderField: View {
     }
 }
 
-/// A native radio button. The two rows are separate views, so AppKit does not
-/// group them; the state comes from the choice instead.
-private struct RadioButton: NSViewRepresentable {
+/// A native radio button, for Settings and setup. The two choices are separate
+/// views, so AppKit does not group them; the state comes from the choice instead.
+struct RadioButton: NSViewRepresentable {
     let title: String
     let isOn: Bool
     let action: () -> Void
@@ -308,6 +310,7 @@ private struct RadioButton: NSViewRepresentable {
 
     func updateNSView(_ button: NSButton, context: Context) {
         button.state = isOn ? .on : .off
+        button.isEnabled = context.environment.isEnabled
         context.coordinator.action = action
     }
 

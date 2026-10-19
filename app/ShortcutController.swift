@@ -95,18 +95,20 @@ final class ShortcutController {
         mediaKey.onDisabled = { [weak self] byTimeout in self?.tapDisabled(byTimeout: byTimeout) }
         logger.info("Chosen \(self.choice.rawValue, privacy: .public): \(self.keyboardShortcut.name, privacy: .public), \(self.mediaKeyName, privacy: .public)")
         registerKeyboard()
+        // A launch never asks for Accessibility: setup asks when it chooses the
+        // media key, and later "Accessibility Needed…" does.
         guard choice == .mediaKey else { return }
-        // Phase 11 step 3 moves this to the moment setup chooses the media key.
-        if !AXIsProcessTrusted() {
-            requestAccessibility()
-        }
         startGrantChecks()
         update()
     }
 
-    /// From Settings. Choosing the media key asks for Accessibility the first time
-    /// in a run, unless it looks granted.
+    /// From setup and Settings. Choosing the media key asks for Accessibility the
+    /// first time in a run unless it looks granted, also when it is already the
+    /// choice: setup may confirm the saved choice.
     func choose(_ newChoice: Choice) {
+        if newChoice == .mediaKey, !askedThisRun, !AXIsProcessTrusted() {
+            requestAccessibility()
+        }
         guard newChoice != choice else { return }
         choice = newChoice
         UserDefaults.standard.set(newChoice.rawValue, forKey: "shortcut")
@@ -115,9 +117,6 @@ final class ShortcutController {
         case .mediaKey:
             recentTimeouts = []
             stoppedAfterTimeouts = false
-            if !askedThisRun, !AXIsProcessTrusted() {
-                requestAccessibility()
-            }
             startGrantChecks()
             update()
         case .keyboard:
@@ -161,10 +160,11 @@ final class ShortcutController {
         logger.info("Recorded \(self.mediaKeyName, privacy: .public)")
     }
 
-    /// "Accessibility Needed…" and Settings' Open System Settings…: the first time
-    /// in a run, macOS's prompt, whose Open System Settings button lists the app
-    /// (switched off) and opens the pane; after that, the pane. An app removed
-    /// from the list after the prompt was used comes back when it relaunches.
+    /// "Accessibility Needed…" and the Open System Settings buttons of setup and
+    /// Settings: the first time in a run, macOS's prompt, whose Open System
+    /// Settings button lists the app (switched off) and opens the pane; after
+    /// that, the pane. An app removed from the list after the prompt was used
+    /// comes back when it relaunches.
     func requestAccessibility() {
         if askedThisRun {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)

@@ -9,12 +9,19 @@ extension NSEvent.ModifierFlags {
     /// the `0x100` one keyboard adds to every event are not part of it.
     static let shortcutModifiers: NSEvent.ModifierFlags = [.control, .option, .shift, .command]
 
-    /// "⌃⇧" for control and shift, in the order macOS menus use.
+    /// In the order macOS menus use.
+    private static let named: [(flag: NSEvent.ModifierFlags, symbol: String, name: String)] = [
+        (.control, "⌃", "Control"), (.option, "⌥", "Option"), (.shift, "⇧", "Shift"), (.command, "⌘", "Command"),
+    ]
+
+    /// "⌃⇧" for control and shift.
     var symbols: String {
-        [(NSEvent.ModifierFlags.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘")]
-            .filter { contains($0.0) }
-            .map(\.1)
-            .joined()
+        Self.named.filter { contains($0.flag) }.map(\.symbol).joined()
+    }
+
+    /// "Control + Shift", as setup spells the media-key shortcut out.
+    var names: String {
+        Self.named.filter { contains($0.flag) }.map(\.name).joined(separator: " + ")
     }
 }
 
