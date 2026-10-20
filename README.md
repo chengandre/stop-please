@@ -190,33 +190,38 @@ If media keys or headphone buttons ever seem stuck on one app, quit and reopen P
 ## Project structure
 
 ```text
-app/                          Swift menu-bar app
-├── main.swift
-├── AppDelegate.swift         startup and wiring
-├── HelperProtocol.swift      messages exchanged with the helper
-├── HelperClient.swift        starts, supervises, and restarts the helper
-├── Coordinator.swift         saved groups, actions, and what the confirmation shows
-├── MenuBarController.swift   menu
-├── GroupChooser.swift        chooser panel
-├── ConfirmationPill.swift    confirmation pill
-├── AppIconCache.swift        app icons for the menu, chooser, and pill
-├── GlobalShortcut.swift      keyboard shortcut
-├── MediaKeyTap.swift         Shift + Play/Pause and the Accessibility check
-├── ShortcutController.swift  which shortcut is chosen and active
-├── SettingsWindow.swift      Settings and both recorders
-├── SetupWindow.swift         first-launch setup
-└── Assets.xcassets/          menu-bar icon
+StopPlease/                       Swift menu-bar app
+├── App/
+│   ├── main.swift
+│   └── AppDelegate.swift         startup and wiring
+├── NowPlaying/
+│   ├── HelperProtocol.swift      messages exchanged with the helper
+│   ├── HelperClient.swift        starts, supervises, and restarts the helper
+│   └── Coordinator.swift         saved groups, actions, and what the confirmation shows
+├── Shortcuts/
+│   ├── GlobalShortcut.swift      keyboard shortcut
+│   ├── MediaKeyTap.swift         Shift + Play/Pause and the Accessibility check
+│   └── ShortcutController.swift  which shortcut is chosen and active
+├── UI/
+│   ├── MenuBarController.swift   menu
+│   ├── GroupChooser.swift        chooser panel
+│   ├── ConfirmationPill.swift    confirmation pill
+│   └── AppIconCache.swift        app icons for the menu, chooser, and pill
+├── Windows/
+│   ├── SettingsWindow.swift      Settings and both recorders
+│   └── SetupWindow.swift         first-launch setup
+└── Assets.xcassets/              menu-bar icon
 
-helper/
-├── perl_helper.m             helper library: every MediaRemote call
-└── perl_helper.pl            loads the library into /usr/bin/perl
+NowPlayingPerlHelper/
+├── perl_helper.m                 helper library: every MediaRemote call
+└── perl_helper.pl                loads the library into /usr/bin/perl
 
 tests/
-├── perl_acceptance.py        acceptance tests against real players
-└── helper_smoke.py           starts the bundled helper and lists sources
+├── perl_acceptance.py            acceptance tests against real players
+└── helper_smoke.py               starts the bundled helper and lists sources
 
-project.yml                   XcodeGen project spec
-Signing.xcconfig              code signing (ad-hoc unless Local.xcconfig is present)
+project.yml                       XcodeGen project spec
+Signing.xcconfig                  code signing (ad-hoc unless Local.xcconfig is present)
 ```
 
 ---

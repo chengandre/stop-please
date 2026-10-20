@@ -152,13 +152,13 @@ def expect_states(label, expected):
 LIBRARY.parent.mkdir(exist_ok=True)
 subprocess.run(
     ["xcrun", "clang", "-dynamiclib", "-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-framework", "AppKit",
-     str(ROOT / "helper" / "perl_helper.m"), "-o", str(LIBRARY)],
+     str(ROOT / "NowPlayingPerlHelper" / "perl_helper.m"), "-o", str(LIBRARY)],
     check=True,
 )
 log(f"Acceptance run {out_dir.name}")
 # A minimal environment, as the app will use: no inherited PERL5OPT or PERL5LIB.
 helper = subprocess.Popen(
-    ["/usr/bin/perl", str(ROOT / "helper" / "perl_helper.pl"), str(LIBRARY)],
+    ["/usr/bin/perl", str(ROOT / "NowPlayingPerlHelper" / "perl_helper.pl"), str(LIBRARY)],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8", env={"PATH": "/usr/bin:/bin"},
 )
 startup = json.loads(helper.stdout.readline() or "{}")

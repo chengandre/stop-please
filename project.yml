@@ -18,8 +18,8 @@ targets:
     type: application
     platform: macOS
     sources:
-      - app
-      - path: helper/perl_helper.pl
+      - StopPlease
+      - path: NowPlayingPerlHelper/perl_helper.pl
         buildPhase: resources
     dependencies:
       # Copied to Contents/Frameworks but not linked: only Perl loads it,
@@ -43,7 +43,7 @@ targets:
     type: library.dynamic
     platform: macOS
     sources:
-      - helper/perl_helper.m
+      - NowPlayingPerlHelper/perl_helper.m
     dependencies:
       - sdk: AppKit.framework
     settings:
