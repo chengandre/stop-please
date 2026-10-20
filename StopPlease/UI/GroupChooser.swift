@@ -161,7 +161,7 @@ private struct ChooserView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Pause Playing")
+            Text("Stop Please!")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(EdgeInsets(top: 0, leading: 12, bottom: 9, trailing: 0))

@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import os
 
-private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: "shortcut")
+private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "shortcut")
 
 extension NSEvent.ModifierFlags {
     /// The modifiers a shortcut is made of. Caps Lock, fn, and device bits such as

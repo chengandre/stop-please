@@ -1,0 +1,2 @@
+/* Finder and Spotlight show this instead of the file name, StopPlease.app. */
+"CFBundleDisplayName" = "Stop Please!";

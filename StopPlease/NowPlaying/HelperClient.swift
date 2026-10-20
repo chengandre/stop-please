@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: "helper")
+private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "helper")
 
 enum HelperError: Error {
     /// The helper answered `{"ok": false}`: `timeout`, `mediaRemoteError`, or

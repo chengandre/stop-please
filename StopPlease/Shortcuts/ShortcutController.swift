@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import os
 
-private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: "shortcut")
+private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "shortcut")
 
 /// Decides which shortcut runs a press (BUILD_GUIDE §10.4): the keyboard shortcut,
 /// or the media-key shortcut when it is chosen and macOS allows its tap. Only the

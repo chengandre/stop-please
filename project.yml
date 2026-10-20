@@ -1,5 +1,5 @@
 # XcodeGen spec. Generate the Xcode project with `xcodegen generate`.
-name: PausePlaying
+name: StopPlease
 options:
   bundleIdPrefix: com.andrecheng
   deploymentTarget:
@@ -14,7 +14,7 @@ settings:
     CODE_SIGN_STYLE: Manual
     ENABLE_HARDENED_RUNTIME: YES
 targets:
-  PausePlaying:
+  StopPlease:
     type: application
     platform: macOS
     sources:
@@ -34,6 +34,11 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES
+        # Finder shows "Stop Please!" from en.lproj/InfoPlist.strings, but only
+        # while this matches the file name, StopPlease.app.
+        INFOPLIST_KEY_CFBundleDisplayName: StopPlease
+        # Merged with the generated keys; holds LSHasLocalizedDisplayName.
+        INFOPLIST_FILE: StopPlease/Info.plist
         # The app must launch /usr/bin/perl.
         ENABLE_APP_SANDBOX: NO
         SWIFT_VERSION: "6.0"

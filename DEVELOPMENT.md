@@ -1,6 +1,6 @@
 # Development
 
-How to build Pause Playing, talk to its helper, run the tests, and read its logs. For what the app does and how it works, see the [README](README.md).
+How to build Stop Please, talk to its helper, run the tests, and read its logs. For what the app does and how it works, see the [README](README.md).
 
 ---
 
@@ -15,16 +15,16 @@ The Xcode project is generated from `project.yml` and is not committed. Edit `pr
 
 ```text
 xcodegen generate
-xcodebuild -project PausePlaying.xcodeproj -scheme PausePlaying -derivedDataPath .build/DerivedData build
+xcodebuild -project StopPlease.xcodeproj -scheme StopPlease -derivedDataPath .build/DerivedData build
 ```
 
 The app is at:
 
 ```text
-.build/DerivedData/Build/Products/Debug/PausePlaying.app
+.build/DerivedData/Build/Products/Debug/StopPlease.app
 ```
 
-Opening `PausePlaying.xcodeproj` in Xcode works too, but run `xcodegen generate` again after changing `project.yml` or adding files.
+Opening `StopPlease.xcodeproj` in Xcode works too, but run `xcodegen generate` again after changing `project.yml` or adding files.
 
 ### Signing
 
@@ -46,7 +46,7 @@ The helper is a library loaded into `/usr/bin/perl` that serves one JSON request
 To talk to it by hand, start it from a built app:
 
 ```text
-APP="$PWD/.build/DerivedData/Build/Products/Debug/PausePlaying.app"
+APP="$PWD/.build/DerivedData/Build/Products/Debug/StopPlease.app"
 /usr/bin/perl "$APP/Contents/Resources/perl_helper.pl" "$APP/Contents/Frameworks/libNowPlayingPerlHelper.dylib"
 ```
 
@@ -117,7 +117,7 @@ Every request and reply is saved under `Outputs/ACCEPTANCE_<timestamp>/`. States
 ### Smoke test
 
 ```text
-python3 -I tests/helper_smoke.py .build/DerivedData/Build/Products/Debug/PausePlaying.app
+python3 -I tests/helper_smoke.py .build/DerivedData/Build/Products/Debug/StopPlease.app
 ```
 
 Starts the helper bundled in a built app the same way the app does, checks that it reports `ready`, and sends one `list`. It only reads, so it is safe to run while media plays and next to the running app.
@@ -126,10 +126,10 @@ Starts the helper bundled in a built app the same way the app does, checks that 
 
 ## Logs
 
-The app logs to the unified log under the subsystem `com.andrecheng.PausePlaying`:
+The app logs to the unified log under the subsystem `com.andrecheng.StopPlease`:
 
 ```text
-/usr/bin/log stream --style compact --level info --predicate 'subsystem == "com.andrecheng.PausePlaying"'
+/usr/bin/log stream --style compact --level info --predicate 'subsystem == "com.andrecheng.StopPlease"'
 ```
 
 Use the full path: in zsh, `log` is a shell builtin.

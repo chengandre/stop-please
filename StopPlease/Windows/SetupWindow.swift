@@ -2,7 +2,7 @@ import AppKit
 import os
 import SwiftUI
 
-private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: "shortcut")
+private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "shortcut")
 
 /// First-launch setup (BUILD_GUIDE §10.4, mockups F1–F3): choose the media-key
 /// shortcut or the keyboard shortcut, each shown as recorded. Shown at launch
@@ -24,7 +24,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         self.shortcuts = shortcuts
         window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: true)
         super.init()
-        window.title = "Pause Playing"
+        window.title = "Stop Please!"
         let hosting = NSHostingView(rootView: SetupView(shortcuts: shortcuts, state: state,
                                                         onContinue: { [weak self] in self?.continuePressed() },
                                                         onDone: { [weak self] in self?.window.close() }))
@@ -128,7 +128,7 @@ private struct SetupView: View {
 
     @ViewBuilder private var mediaKeyDetail: some View {
         if !state.waiting {
-            Text("Needs Accessibility, so that Pause Playing can take the key before your player does.")
+            Text("Needs Accessibility, so that Stop Please can take the key before your player does.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

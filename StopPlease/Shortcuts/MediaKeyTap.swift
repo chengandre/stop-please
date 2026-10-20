@@ -1,7 +1,7 @@
 import AppKit
 import os
 
-private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: "shortcut")
+private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "shortcut")
 
 /// An active event tap that swallows Play/Pause pressed with exactly `modifiers`
 /// and runs `action` instead (BUILD_GUIDE §10.4). Every other press, plain

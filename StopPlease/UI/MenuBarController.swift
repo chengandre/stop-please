@@ -49,7 +49,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
         // A template image from the asset catalog; its shadow is partly transparent.
         let icon = NSImage(named: "MenuBarIcon")!
-        icon.accessibilityDescription = "Pause Playing"
+        icon.accessibilityDescription = "Stop Please"
         statusItem.button?.image = icon
         menu.delegate = self
         menu.autoenablesItems = false
@@ -132,7 +132,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let settingsItem = actionItem("Settings…", #selector(openSettings), enabled: true)
         settingsItem.keyEquivalent = ","
         menu.addItem(settingsItem)
-        menu.addItem(withTitle: "Quit Pause Playing", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Stop Please", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
     /// The app's icon, the title (the app name when there is none), and the state.

@@ -1,7 +1,7 @@
 import AppKit
 import os
 
-private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: "coordinator")
+private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "coordinator")
 
 /// One source in a saved group, as it was when this app paused it.
 struct PausedSource {

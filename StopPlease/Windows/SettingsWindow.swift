@@ -3,9 +3,9 @@ import Carbon.HIToolbox
 import os
 import SwiftUI
 
-private let logger = Logger(subsystem: "com.andrecheng.PausePlaying", category: "shortcut")
+private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "shortcut")
 
-/// "Pause Playing Settings" (BUILD_GUIDE §10.4, mockups S1–S6): which shortcut is
+/// "Stop Please! Settings" (BUILD_GUIDE §10.4, mockups S1–S6): which shortcut is
 /// chosen, and a recorder for each. Opening it activates the app so that the
 /// window can take keys; it has no Dock icon either way.
 @MainActor
@@ -17,7 +17,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         recorder = ShortcutRecorder(shortcuts: shortcuts)
         window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: true)
         super.init()
-        window.title = "Pause Playing Settings"
+        window.title = "Stop Please! Settings"
         // Sized by the view, also when the Accessibility box appears or goes.
         let hosting = NSHostingView(rootView: SettingsView(shortcuts: shortcuts, recorder: recorder))
         window.contentView = hosting

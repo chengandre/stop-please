@@ -54,7 +54,7 @@ jobs:
             CONFIGURATION=Release
             # Xcode leaves the hardened runtime out of ad-hoc signatures. Release builds
             # add it back; Debug builds cannot, because library validation then refuses
-            # their PausePlaying.debug.dylib (an ad-hoc signature has no team ID).
+            # their StopPlease.debug.dylib (an ad-hoc signature has no team ID).
             CODE_SIGN_FLAGS=--options=runtime
           else
             VERSION="0.0.${GITHUB_RUN_NUMBER}"
@@ -65,7 +65,7 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "CONFIGURATION=$CONFIGURATION" >> "$GITHUB_ENV"
           echo "CODE_SIGN_FLAGS=$CODE_SIGN_FLAGS" >> "$GITHUB_ENV"
-          echo "APP=.build/DerivedData/Build/Products/$CONFIGURATION/PausePlaying.app" >> "$GITHUB_ENV"
+          echo "APP=.build/DerivedData/Build/Products/$CONFIGURATION/StopPlease.app" >> "$GITHUB_ENV"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install XcodeGen
@@ -88,8 +88,8 @@ jobs:
       - name: Build
         run: |
           xcodebuild \
-            -project PausePlaying.xcodeproj \
-            -scheme PausePlaying \
+            -project StopPlease.xcodeproj \
+            -scheme StopPlease \
             -configuration "$CONFIGURATION" \
             -destination "generic/platform=macOS" \
             -derivedDataPath .build/DerivedData \
@@ -128,36 +128,36 @@ jobs:
         run: |
           mkdir -p dist "$RUNNER_TEMP/dmg"
 
-          ditto -c -k --keepParent "$APP" "dist/PausePlaying-$VERSION.zip"
+          ditto -c -k --keepParent "$APP" "dist/StopPlease-$VERSION.zip"
 
           # The DMG window shows the app next to an Applications link to drag it onto.
-          ditto "$APP" "$RUNNER_TEMP/dmg/PausePlaying.app"
+          ditto "$APP" "$RUNNER_TEMP/dmg/StopPlease.app"
           ln -s /Applications "$RUNNER_TEMP/dmg/Applications"
 
           # hdiutil on hosted runners sometimes fails with "Resource busy"; retry.
           for attempt in 1 2 3; do
             hdiutil create \
-              -volname "Pause Playing" \
+              -volname "Stop Please!" \
               -srcdir "$RUNNER_TEMP/dmg" \
               -format UDZO \
               -ov \
-              "dist/PausePlaying-$VERSION.dmg" && break
+              "dist/StopPlease-$VERSION.dmg" && break
             sleep 5
           done
 
-          test -f "dist/PausePlaying-$VERSION.dmg"
+          test -f "dist/StopPlease-$VERSION.dmg"
 
       - name: Check packages
         run: |
-          ditto -x -k "dist/PausePlaying-$VERSION.zip" "$RUNNER_TEMP/unzipped"
-          codesign --verify --deep --strict "$RUNNER_TEMP/unzipped/PausePlaying.app"
+          ditto -x -k "dist/StopPlease-$VERSION.zip" "$RUNNER_TEMP/unzipped"
+          codesign --verify --deep --strict "$RUNNER_TEMP/unzipped/StopPlease.app"
 
-          hdiutil verify "dist/PausePlaying-$VERSION.dmg"
+          hdiutil verify "dist/StopPlease-$VERSION.dmg"
 
       - name: Upload packages
         uses: actions/upload-artifact@v7
         with:
-          name: PausePlaying
+          name: StopPlease
           path: dist/
           retention-days: 7
           if-no-files-found: error
@@ -179,17 +179,17 @@ jobs:
       - name: Download packages
         uses: actions/download-artifact@v8
         with:
-          name: PausePlaying
+          name: StopPlease
           path: dist
 
       - name: Unpack the app
         run: |
           ditto -x -k \
-            "dist/PausePlaying-${{ needs.build.outputs.version }}.zip" \
+            "dist/StopPlease-${{ needs.build.outputs.version }}.zip" \
             "$RUNNER_TEMP/app"
 
       - name: Start the helper and list sources
-        run: python3 -I tests/helper_smoke.py "$RUNNER_TEMP/app/PausePlaying.app"
+        run: python3 -I tests/helper_smoke.py "$RUNNER_TEMP/app/StopPlease.app"
 
   release:
     name: Publish GitHub Release
@@ -207,17 +207,17 @@ jobs:
       - name: Download packages
         uses: actions/download-artifact@v8
         with:
-          name: PausePlaying
+          name: StopPlease
           path: dist
 
       - name: Create GitHub Release
         run: |
           gh release create \
             "$GITHUB_REF_NAME" \
-            "dist/PausePlaying-$VERSION.zip" \
-            "dist/PausePlaying-$VERSION.dmg" \
+            "dist/StopPlease-$VERSION.zip" \
+            "dist/StopPlease-$VERSION.dmg" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Pause Playing $GITHUB_REF_NAME" \
+            --title "Stop Please! $GITHUB_REF_NAME" \
             --notes-file ".github/release-notes/$GITHUB_REF_NAME.md" \
             --verify-tag
         env:

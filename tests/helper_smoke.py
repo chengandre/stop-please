@@ -1,4 +1,4 @@
-"""Start the helper bundled in a built PausePlaying.app the way the app does, and
+"""Start the helper bundled in a built StopPlease.app the way the app does, and
 send one `list`. Used by CI on each macOS runner image.
 
 Passes when the helper reports `ready` (Perl loaded our library, MediaRemote and
@@ -6,7 +6,7 @@ every symbol resolved, commands 0/1 are still Play/Pause) and answers the `list`
 with ok. A `list` is read-only. CI runners have no players, so an empty list is
 expected there; it cannot show whether other apps' sources would be visible.
 
-Usage: python3 -I tests/helper_smoke.py path/to/PausePlaying.app
+Usage: python3 -I tests/helper_smoke.py path/to/StopPlease.app
 """
 import json
 import pathlib
