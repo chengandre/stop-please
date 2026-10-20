@@ -163,34 +163,6 @@ The helper waits until Spotify is the Now Playing app before sending, and skips 
 
 ---
 
-## Safety and recovery
-
-Stop Please is intentionally non-invasive:
-
-- nothing is injected into other apps
-- no security settings are changed
-- target apps are used as installed, with no plugins or settings
-- the override is set only for your commands, never when the menu opens or sources are listed (plus once when the helper starts, to release one left behind)
-- the helper refuses to send a command unless the intended app really became the Now Playing app
-
-If the helper exits, Stop Please restarts it at once, and a new helper releases any override left behind.
-
-If media keys or headphone buttons ever seem stuck on one app, quit and reopen Stop Please.
-
----
-
-## Known limitations
-
-- **The override is system-wide.** While a command is routed through it, any media key press or command from another app also reaches the targeted app. The window is a fraction of each command's roughly 30 ms, but not zero. The open-source project this technique comes from left out per-app commands for this reason.
-- **Platform risk.** The route depends on the Apple-identity exemption and on Perl shipping with macOS. Apple has said scripting runtimes will eventually be removed, and any macOS update could close the route. When it stops working, the menu says so.
-- **Only apps that appear in Now Playing.** Apps that play audio without publishing to Now Playing are not seen.
-- **One source per app.** A browser is one source regardless of how many tabs play.
-- **Apps with the same identity.** Some apps are signed with a generic identity; for example, several Electron apps can all appear as `Electron`. When two of them play at once, Stop Please refuses to control them rather than risk the wrong one.
-- **A relaunched app is not resumed.** Groups remember the app's process, so an app that quit after being paused is skipped.
-- **Groups are not saved** across quits.
-
----
-
 ## Project structure
 
 ```text
@@ -231,6 +203,34 @@ assets/                           icon source (icon.svg) and screenshots
 project.yml                       XcodeGen project spec
 Signing.xcconfig                  code signing (ad-hoc unless Local.xcconfig is present)
 ```
+
+---
+
+## Safety and recovery
+
+Stop Please is intentionally non-invasive:
+
+- nothing is injected into other apps
+- no security settings are changed
+- target apps are used as installed, with no plugins or settings
+- the override is set only for your commands, never when the menu opens or sources are listed (plus once when the helper starts, to release one left behind)
+- the helper refuses to send a command unless the intended app really became the Now Playing app
+
+If the helper exits, Stop Please restarts it at once, and a new helper releases any override left behind.
+
+If media keys or headphone buttons ever seem stuck on one app, quit and reopen Stop Please.
+
+---
+
+## Known limitations
+
+- **The override is system-wide.** While a command is routed through it, any media key press or command from another app also reaches the targeted app. The window is a fraction of each command's roughly 30 ms, but not zero. The open-source project this technique comes from left out per-app commands for this reason.
+- **Platform risk.** The route depends on the Apple-identity exemption and on Perl shipping with macOS. Apple has said scripting runtimes will eventually be removed, and any macOS update could close the route. When it stops working, the menu says so.
+- **Only apps that appear in Now Playing.** Apps that play audio without publishing to Now Playing are not seen.
+- **One source per app.** A browser is one source regardless of how many tabs play.
+- **Apps with the same identity.** Some apps are signed with a generic identity; for example, several Electron apps can all appear as `Electron`. When two of them play at once, Stop Please refuses to control them rather than risk the wrong one.
+- **A relaunched app is not resumed.** Groups remember the app's process, so an app that quit after being paused is skipped.
+- **Groups are not saved** across quits.
 
 ---
 
