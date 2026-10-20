@@ -1,0 +1,224 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+    # Not evaluated for tag pushes, so every v* tag builds.
+    paths-ignore:
+      - "**.md"
+      - ".github/release-notes/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build the app
+    runs-on: macos-15
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v7
+
+      - name: Determine version and configuration
+        id: version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            if ! printf '%s\n' "$GITHUB_REF_NAME" \
+              | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+            then
+              echo "::error::Unsupported release tag '$GITHUB_REF_NAME'. Release tags must use vMAJOR.MINOR.PATCH with three numeric components."
+              exit 1
+            fi
+
+            # Checked here so that a missing file fails before the macOS build.
+            NOTES=".github/release-notes/${GITHUB_REF_NAME}.md"
+            if [ ! -f "$NOTES" ]; then
+              echo "::error::Release notes $NOTES not found."
+              exit 1
+            fi
+
+            VERSION="${GITHUB_REF_NAME#v}"
+            CONFIGURATION=Release
+            # Xcode leaves the hardened runtime out of ad-hoc signatures. Release builds
+            # add it back; Debug builds cannot, because library validation then refuses
+            # their PausePlaying.debug.dylib (an ad-hoc signature has no team ID).
+            CODE_SIGN_FLAGS=--options=runtime
+          else
+            VERSION="0.0.${GITHUB_RUN_NUMBER}"
+            CONFIGURATION=Debug
+            CODE_SIGN_FLAGS=
+          fi
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "CONFIGURATION=$CONFIGURATION" >> "$GITHUB_ENV"
+          echo "CODE_SIGN_FLAGS=$CODE_SIGN_FLAGS" >> "$GITHUB_ENV"
+          echo "APP=.build/DerivedData/Build/Products/$CONFIGURATION/PausePlaying.app" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install XcodeGen
+        run: |
+          curl -fsSL \
+            -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip"
+
+          echo \
+            "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" \
+            | shasum -a 256 -c -
+
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Signing.xcconfig falls back to ad-hoc signing without Local.xcconfig.
+      - name: Build
+        run: |
+          xcodebuild \
+            -project PausePlaying.xcodeproj \
+            -scheme PausePlaying \
+            -configuration "$CONFIGURATION" \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath .build/DerivedData \
+            -quiet \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            OTHER_CODE_SIGN_FLAGS="$CODE_SIGN_FLAGS" \
+            build
+
+      - name: Check the app
+        run: |
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+          test -f "$APP/Contents/Frameworks/libNowPlayingPerlHelper.dylib"
+          test -f "$APP/Contents/Resources/perl_helper.pl"
+
+          BUILT_VERSION="$(/usr/libexec/PlistBuddy \
+            -c "Print CFBundleShortVersionString" \
+            "$APP/Contents/Info.plist")"
+
+          if [ "$BUILT_VERSION" != "$VERSION" ]; then
+            echo "::error::Built version $BUILT_VERSION does not match $VERSION."
+            exit 1
+          fi
+
+          if [ "$CONFIGURATION" = "Release" ]; then
+            for CODE in "$APP" "$APP/Contents/Frameworks/libNowPlayingPerlHelper.dylib"; do
+              if ! codesign -dv "$CODE" 2>&1 | grep -q 'flags=.*runtime'; then
+                echo "::error::$CODE is not signed with the hardened runtime."
+                exit 1
+              fi
+            done
+          fi
+
+      - name: Package zip and DMG
+        run: |
+          mkdir -p dist "$RUNNER_TEMP/dmg"
+
+          ditto -c -k --keepParent "$APP" "dist/PausePlaying-$VERSION.zip"
+
+          # The DMG window shows the app next to an Applications link to drag it onto.
+          ditto "$APP" "$RUNNER_TEMP/dmg/PausePlaying.app"
+          ln -s /Applications "$RUNNER_TEMP/dmg/Applications"
+
+          # hdiutil on hosted runners sometimes fails with "Resource busy"; retry.
+          for attempt in 1 2 3; do
+            hdiutil create \
+              -volname "Pause Playing" \
+              -srcdir "$RUNNER_TEMP/dmg" \
+              -format UDZO \
+              -ov \
+              "dist/PausePlaying-$VERSION.dmg" && break
+            sleep 5
+          done
+
+          test -f "dist/PausePlaying-$VERSION.dmg"
+
+      - name: Check packages
+        run: |
+          ditto -x -k "dist/PausePlaying-$VERSION.zip" "$RUNNER_TEMP/unzipped"
+          codesign --verify --deep --strict "$RUNNER_TEMP/unzipped/PausePlaying.app"
+
+          hdiutil verify "dist/PausePlaying-$VERSION.dmg"
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: PausePlaying
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  helper-smoke:
+    name: Helper smoke test (${{ matrix.os }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v7
+
+      - name: Download packages
+        uses: actions/download-artifact@v8
+        with:
+          name: PausePlaying
+          path: dist
+
+      - name: Unpack the app
+        run: |
+          ditto -x -k \
+            "dist/PausePlaying-${{ needs.build.outputs.version }}.zip" \
+            "$RUNNER_TEMP/app"
+
+      - name: Start the helper and list sources
+        run: python3 -I tests/helper_smoke.py "$RUNNER_TEMP/app/PausePlaying.app"
+
+  release:
+    name: Publish GitHub Release
+    needs: [build, helper-smoke]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v7
+
+      - name: Download packages
+        uses: actions/download-artifact@v8
+        with:
+          name: PausePlaying
+          path: dist
+
+      - name: Create GitHub Release
+        run: |
+          gh release create \
+            "$GITHUB_REF_NAME" \
+            "dist/PausePlaying-$VERSION.zip" \
+            "dist/PausePlaying-$VERSION.dmg" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Pause Playing $GITHUB_REF_NAME" \
+            --notes-file ".github/release-notes/$GITHUB_REF_NAME.md" \
+            --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
