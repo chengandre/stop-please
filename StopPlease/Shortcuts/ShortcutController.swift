@@ -11,7 +11,7 @@ private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "s
 /// Saved in user defaults: `shortcut` (`keyboard`, the default, or `mediaKey`),
 /// `keyboardKeyCode` and `keyboardModifiers` (default ⌃⌥⌘P), and
 /// `mediaKeyModifiers` (default ⇧). Modifiers are `NSEvent.ModifierFlags` raw
-/// values.
+/// values. A missing recording means the default.
 ///
 /// A revoke must remove the tap before the next click: macOS keeps a revoked tap
 /// in the event stream and holds each event it subscribes to, mouse-button events
@@ -30,6 +30,8 @@ final class ShortcutController {
     /// a tap it then holds events for.
     private static let timeoutsAllowed = 2
     private static let timeoutWindow: TimeInterval = 30
+
+    static let standardMediaKeyModifiers: NSEvent.ModifierFlags = .shift
 
     private(set) var choice: Choice
     private(set) var keyboardShortcut: KeyboardShortcut
@@ -80,7 +82,7 @@ final class ShortcutController {
             keyboardShortcut = .standard
         }
         let mediaKeyModifiers = (defaults.object(forKey: "mediaKeyModifiers") as? Int)
-            .map { NSEvent.ModifierFlags(rawValue: UInt($0)) } ?? .shift
+            .map { NSEvent.ModifierFlags(rawValue: UInt($0)) } ?? Self.standardMediaKeyModifiers
         self.mediaKeyModifiers = mediaKeyModifiers
         self.action = action
         mediaKey = MediaKeyTap(modifiers: mediaKeyModifiers)
@@ -158,6 +160,29 @@ final class ShortcutController {
         mediaKey.modifiers = modifiers
         UserDefaults.standard.set(Int(modifiers.rawValue), forKey: "mediaKeyModifiers")
         logger.info("Recorded \(self.mediaKeyName, privacy: .public)")
+    }
+
+    /// Settings' reset buttons: forget a recording, so the default applies. A
+    /// click during a recording ends it first.
+    func restoreKeyboardShortcut() {
+        keyboardShortcut = .standard
+        UserDefaults.standard.removeObject(forKey: "keyboardKeyCode")
+        UserDefaults.standard.removeObject(forKey: "keyboardModifiers")
+        logger.info("Restored \(self.keyboardShortcut.name, privacy: .public)")
+        // `register` does nothing while the old combination is registered.
+        if !mediaKeyActive {
+            keyboard.unregister()
+            registerKeyboard()
+        }
+        onChange()
+    }
+
+    func restoreMediaKeyModifiers() {
+        mediaKeyModifiers = Self.standardMediaKeyModifiers
+        mediaKey.modifiers = mediaKeyModifiers
+        UserDefaults.standard.removeObject(forKey: "mediaKeyModifiers")
+        logger.info("Restored \(self.mediaKeyName, privacy: .public)")
+        onChange()
     }
 
     /// "Accessibility Needed…" and the Open System Settings buttons of setup and

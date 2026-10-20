@@ -63,7 +63,7 @@ Groups:
 
 ### The menu
 
-<img src="assets/menu.png" width="306" alt="The Stop Please menu: three paused Now Playing sources, Pause All Playing with its shortcut, one saved group under Resume, Settings, and Quit">
+<img src="assets/menu.png" width="306" alt="The Stop Please menu: three paused Now Playing sources, Pause All Playing with its shortcut, two saved groups under Resume, Settings, and Quit">
 
 - **Now Playing** lists every source with its app icon, title, and state.
 - **Pause All Playing** does the same as the shortcut when something is playing; the shortcut is shown on its right.
@@ -95,9 +95,9 @@ Open **Settings…** from the menu (⌘,) to choose between the two shortcuts an
 - **Keyboard**: a letter, number, symbol, or F-key with at least one of ⌘, ⌃, or ⌥.
 - **Media key**: Play/Pause is fixed; hold the modifiers you want and release them to save. Shift alone is allowed.
 
-Only the chosen shortcut responds, and both recordings are kept.
+Only the chosen shortcut responds, and both recordings are kept. The ↺ button after each one restores its default (⌃⌥⌘P or Shift + Play/Pause).
 
-<img src="assets/settings.png" width="572" alt="Stop Please! Settings: the keyboard shortcut ⌃⌥⌘P and the media-key shortcut ⌃ + Play/Pause, with the media key chosen and Accessibility granted">
+<img src="assets/settings.png" width="572" alt="Stop Please! Settings: the keyboard shortcut ⌃⌥⌘P and the media-key shortcut ⇧ + Play/Pause, with the media key chosen and Accessibility granted">
 
 ---
 

@@ -182,6 +182,8 @@ private struct SettingsView: View {
                               isPlaceholder: recording && recorder.held.isEmpty, isRecording: recording) {
                     recorder.start(.keyboard)
                 }
+                ResetButton(help: "Restore \(KeyboardShortcut.standard.name)") { shortcuts.restoreKeyboardShortcut() }
+                    .disabled(shortcuts.keyboardShortcut == .standard)
             }
             Caption(text: keyboardCaption.text, isError: keyboardCaption.isError)
         }
@@ -208,6 +210,10 @@ private struct SettingsView: View {
                     recorder.start(.mediaKey)
                 }
                 Text("+ Play/Pause")
+                ResetButton(help: "Restore \(ShortcutController.standardMediaKeyModifiers.symbols) + Play/Pause") {
+                    shortcuts.restoreMediaKeyModifiers()
+                }
+                .disabled(shortcuts.mediaKeyModifiers == ShortcutController.standardMediaKeyModifiers)
             }
             Caption(text: mediaKeyCaption, isError: false)
             if shortcuts.choice == .mediaKey {
@@ -294,6 +300,29 @@ private struct RecorderField: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// A square after a recorder field that restores its default; dimmed while the
+/// default is recorded. Its click also ends a recording, as any click does.
+private struct ResetButton: View {
+    let help: String
+    let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.counterclockwise")
+                .foregroundStyle(isEnabled ? Color.primary : Color.secondary.opacity(0.5))
+                .frame(width: 24, height: 24)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor))
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }
 
