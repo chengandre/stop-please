@@ -139,3 +139,4 @@ Use the full path: in zsh, `log` is a shell builtin.
 | `helper` | helper start, ready, exit, and restart |
 | `coordinator` | one line per command with each app's outcome and state; groups saved, removed, or kept for retry |
 | `shortcut` | the chosen and active shortcut, each press, Accessibility changes, the media-key tap, recording, and setup |
+| `login` | launch at login: each register or unregister with the resulting status, and status changes |

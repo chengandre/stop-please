@@ -5,21 +5,24 @@ import SwiftUI
 
 private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "shortcut")
 
-/// "Stop Please! Settings" (BUILD_GUIDE §10.4, mockups S1–S6): which shortcut is
-/// chosen, and a recorder for each. Opening it activates the app so that the
-/// window can take keys; it has no Dock icon either way.
+/// "Stop Please! Settings" (BUILD_GUIDE §10.4, mockups S1–S6; §12): launch at
+/// login, which shortcut is chosen, and a recorder for each. Opening it activates
+/// the app so that the window can take keys; it has no Dock icon either way.
 @MainActor
 final class SettingsWindow: NSObject, NSWindowDelegate {
     private let window: NSWindow
     private let recorder: ShortcutRecorder
+    private let launchAtLogin: LaunchAtLogin
 
-    init(shortcuts: ShortcutController) {
+    init(shortcuts: ShortcutController, launchAtLogin: LaunchAtLogin) {
         recorder = ShortcutRecorder(shortcuts: shortcuts)
+        self.launchAtLogin = launchAtLogin
         window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: true)
         super.init()
         window.title = "Stop Please! Settings"
         // Sized by the view, also when the Accessibility box appears or goes.
-        let hosting = NSHostingView(rootView: SettingsView(shortcuts: shortcuts, recorder: recorder))
+        let hosting = NSHostingView(rootView: SettingsView(shortcuts: shortcuts, recorder: recorder,
+                                                           launchAtLogin: launchAtLogin))
         window.contentView = hosting
         // Sized now, so that the first `center()` uses the real size.
         window.setContentSize(hosting.fittingSize)
@@ -35,6 +38,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         // setup, the cooperative `activate()` would leave the window behind.
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    /// The login item may have been switched in System Settings meanwhile.
+    func windowDidBecomeKey(_ notification: Notification) {
+        launchAtLogin.refresh()
     }
 
     /// Closing the window, or another window taking key, ends a recording unsaved.
@@ -150,6 +158,7 @@ final class ShortcutRecorder {
 private struct SettingsView: View {
     let shortcuts: ShortcutController
     let recorder: ShortcutRecorder
+    let launchAtLogin: LaunchAtLogin
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -166,6 +175,10 @@ private struct SettingsView: View {
             Text("Only the chosen shortcut responds. Both recordings are kept.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            Divider()
+                .padding(.vertical, 4)
+            Toggle("Launch at login", isOn: Binding(get: { launchAtLogin.isEnabled }, set: { launchAtLogin.set($0) }))
+                .toggleStyle(.checkbox)
         }
         .padding(20)
         .frame(width: 460)

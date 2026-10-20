@@ -97,6 +97,8 @@ Open **Settings…** from the menu (⌘,) to choose between the two shortcuts an
 
 Only the chosen shortcut responds, and both recordings are kept. The ↺ button after each one restores its default (⌃⌥⌘P or Shift + Play/Pause).
 
+**Launch at login** starts Stop Please when you log in. It is off by default; once it is ticked, Stop Please appears in **System Settings → General → Login Items**, where it can also be switched off.
+
 <img src="assets/settings.png" width="572" alt="Stop Please! Settings: the keyboard shortcut ⌃⌥⌘P and the media-key shortcut ⇧ + Play/Pause, with the media key chosen and Accessibility granted">
 
 ---
@@ -169,7 +171,8 @@ The helper waits until Spotify is the Now Playing app before sending, and skips 
 StopPlease/                       Swift menu-bar app
 ├── App/
 │   ├── main.swift
-│   └── AppDelegate.swift         startup and wiring
+│   ├── AppDelegate.swift         startup and wiring
+│   └── LaunchAtLogin.swift       the login item
 ├── NowPlaying/
 │   ├── HelperProtocol.swift      messages exchanged with the helper
 │   ├── HelperClient.swift        starts, supervises, and restarts the helper
