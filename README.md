@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="assets/icon.svg" width="128" alt="Stop Please! icon">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.png">
+    <img src="assets/banner-light.png" alt="Stop Please! The pause-everything button macOS should have had. Shift + Play/Pause">
+  </picture>
 </p>
-
-<h1 align="center">Stop Please!</h1>
 
 Stop Please is a **menu-bar utility for macOS 15 or later** that pauses **everything that is playing**, and later **resumes only what it paused**.
 
@@ -207,7 +208,7 @@ tests/
 ├── perl_acceptance.py            acceptance tests against real players
 └── helper_smoke.py               starts the bundled helper and lists sources
 
-assets/                           icon source (icon.svg) and screenshots
+assets/                           icon source (icon.svg), README banners, and screenshots
 
 project.yml                       XcodeGen project spec
 Signing.xcconfig                  code signing (ad-hoc unless Local.xcconfig is present)
