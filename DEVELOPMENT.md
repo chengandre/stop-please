@@ -37,6 +37,8 @@ DEVELOPMENT_TEAM = <your team ID>
 
 Then run `xcodegen generate` again.
 
+Releases are built by GitHub Actions and signed with the project's own self-signed certificate, kept in the repository's secrets, so users keep the permission across updates. Debug builds in CI stay ad-hoc.
+
 ---
 
 ## The helper

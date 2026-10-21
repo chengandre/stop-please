@@ -119,7 +119,7 @@ No other permissions are requested: no Input Monitoring, no Automation, no scree
 
 To update, quit Stop Please and replace the app in **Applications** with the new one.
 
-Builds are not signed with a Developer ID, so macOS treats each version as a new app and stops honoring its Accessibility permission. If you use Shift + Play/Pause, remove Stop Please from **System Settings → Privacy & Security → Accessibility** with **−**, then choose **Accessibility Needed…** in the menu to grant it again.
+Every release is signed with the same certificate, so the Accessibility permission carries over to the new version.
 
 To uninstall, quit Stop Please, delete it from **Applications**, and remove it from the Accessibility list if it is there.
 

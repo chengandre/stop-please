@@ -2,6 +2,11 @@ name: Build
 
 on:
   workflow_dispatch:
+    inputs:
+      signed_release:
+        description: "Signed Release build (not published)"
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -27,6 +32,11 @@ jobs:
     timeout-minutes: 20
     outputs:
       version: ${{ steps.version.outputs.version }}
+    env:
+      # The release certificate ("Stop Please", self-signed, valid to 18 October 2036).
+      # macOS keeps users' Accessibility grant across updates only while every release
+      # is signed with it, so Release builds must match this SHA-1.
+      SIGNING_CERTIFICATE_SHA1: 87BC56A6F50C8A4F59B3EFB6F69CFD47286EF583
 
     steps:
       - name: Checkout project
@@ -34,6 +44,8 @@ jobs:
 
       - name: Determine version and configuration
         id: version
+        env:
+          SIGNED_RELEASE: ${{ inputs.signed_release }}
         run: |
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             if ! printf '%s\n' "$GITHUB_REF_NAME" \
@@ -52,19 +64,28 @@ jobs:
 
             VERSION="${GITHUB_REF_NAME#v}"
             CONFIGURATION=Release
-            # Xcode leaves the hardened runtime out of ad-hoc signatures. Release builds
-            # add it back; Debug builds cannot, because library validation then refuses
-            # their StopPlease.debug.dylib (an ad-hoc signature has no team ID).
-            CODE_SIGN_FLAGS=--options=runtime
+          elif [ "$SIGNED_RELEASE" = "true" ]; then
+            # A manual run that checks a signed Release build without publishing it.
+            VERSION="0.0.${GITHUB_RUN_NUMBER}"
+            CONFIGURATION=Release
           else
             VERSION="0.0.${GITHUB_RUN_NUMBER}"
             CONFIGURATION=Debug
-            CODE_SIGN_FLAGS=
+          fi
+
+          # Release builds are signed with the release certificate, and Xcode then adds
+          # the hardened runtime. Debug builds stay ad-hoc (Signing.xcconfig's default)
+          # and without the runtime: library validation would refuse their
+          # StopPlease.debug.dylib, which has no team ID.
+          if [ "$CONFIGURATION" = "Release" ]; then
+            CODE_SIGN_IDENTITY="Stop Please"
+          else
+            CODE_SIGN_IDENTITY=-
           fi
 
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "CONFIGURATION=$CONFIGURATION" >> "$GITHUB_ENV"
-          echo "CODE_SIGN_FLAGS=$CODE_SIGN_FLAGS" >> "$GITHUB_ENV"
+          echo "CODE_SIGN_IDENTITY=$CODE_SIGN_IDENTITY" >> "$GITHUB_ENV"
           echo "APP=.build/DerivedData/Build/Products/$CONFIGURATION/StopPlease.app" >> "$GITHUB_ENV"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -84,7 +105,49 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      # Signing.xcconfig falls back to ad-hoc signing without Local.xcconfig.
+      # Into a temporary keychain that the last step deletes.
+      - name: Import the signing certificate
+        if: env.CONFIGURATION == 'Release'
+        env:
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$CERTIFICATE_P12" ] || [ -z "$CERTIFICATE_PASSWORD" ]; then
+            echo "::error::Release builds need the secrets MACOS_CERTIFICATE_P12 and MACOS_CERTIFICATE_PASSWORD."
+            exit 1
+          fi
+
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          printf '%s' "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security import "$RUNNER_TEMP/signing.p12" \
+            -k "$KEYCHAIN" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/signing.p12"
+
+          # Lets codesign use the key without a prompt.
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | tr -d '"')
+
+          # A self-signed certificate is not trusted, so it is listed without -v.
+          if ! security find-identity -p codesigning "$KEYCHAIN" \
+            | grep -q "$SIGNING_CERTIFICATE_SHA1"
+          then
+            echo "::error::The imported certificate is not the release certificate $SIGNING_CERTIFICATE_SHA1."
+            exit 1
+          fi
+
       - name: Build
         run: |
           xcodebuild \
@@ -96,7 +159,7 @@ jobs:
             -quiet \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
-            OTHER_CODE_SIGN_FLAGS="$CODE_SIGN_FLAGS" \
+            CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY" \
             build
 
       - name: Check the app
@@ -116,9 +179,21 @@ jobs:
           fi
 
           if [ "$CONFIGURATION" = "Release" ]; then
+            LEAF="certificate leaf = H\"$(printf '%s' "$SIGNING_CERTIFICATE_SHA1" | tr 'A-F' 'a-f')\""
+            APP_REQUIREMENT="designated => identifier \"com.andrecheng.StopPlease\" and $LEAF"
+
+            if [ "$(codesign -d -r- "$APP" 2>&1 | grep '^designated => ')" != "$APP_REQUIREMENT" ]; then
+              echo "::error::$APP does not have the designated requirement: $APP_REQUIREMENT"
+              exit 1
+            fi
+
             for CODE in "$APP" "$APP/Contents/Frameworks/libNowPlayingPerlHelper.dylib"; do
               if ! codesign -dv "$CODE" 2>&1 | grep -q 'flags=.*runtime'; then
                 echo "::error::$CODE is not signed with the hardened runtime."
+                exit 1
+              fi
+              if ! codesign -d -r- "$CODE" 2>&1 | grep -qF "$LEAF"; then
+                echo "::error::$CODE is not signed with the release certificate."
                 exit 1
               fi
             done
@@ -161,6 +236,10 @@ jobs:
           path: dist/
           retention-days: 7
           if-no-files-found: error
+
+      - name: Delete the signing keychain
+        if: always() && env.KEYCHAIN != ''
+        run: security delete-keychain "$KEYCHAIN"
 
   helper-smoke:
     name: Helper smoke test (${{ matrix.os }})
