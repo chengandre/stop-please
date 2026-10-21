@@ -250,3 +250,7 @@ If media keys or headphone buttons ever seem stuck on one app, quit and reopen S
 ## Credits
 
 - [mediaremote-adapter](https://github.com/ungive/mediaremote-adapter) by ungive, for the technique of reaching MediaRemote from the system Perl. Stop Please's helper is its own implementation, including the per-app commands.
+- [AltTab](https://github.com/lwouis/alt-tab-macos), [hops](https://github.com/jtjones09/grabbr-hops), and [Mac Mouse Fix](https://github.com/noah-nuebling/mac-mouse-fix), for handling the Accessibility permission: noticing a revoke before it can freeze the mouse, and when macOS will ask.
+- [LaunchAtLogin-Modern](https://github.com/sindresorhus/LaunchAtLogin-Modern), for launch at login that respects System Settings.
+- [LinearMouse](https://github.com/linearmouse/linearmouse), for exporting recent entries from the system log.
+- [AeroSpace](https://github.com/nikitabobko/AeroSpace), for signing releases with a self-signed certificate so the permission survives updates.
