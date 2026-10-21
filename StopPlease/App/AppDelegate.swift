@@ -1,4 +1,7 @@
 import AppKit
+import os
+
+private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "app")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController!
@@ -13,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        // Marks where each run starts in an exported log, and which version ran.
+        logger.notice("Started Stop Please \(LogExport.appVersion, privacy: .public) on \(LogExport.macOSVersion, privacy: .public)")
         let helper = HelperClient(
             script: Bundle.main.url(forResource: "perl_helper", withExtension: "pl")!,
             library: Bundle.main.privateFrameworksURL!.appending(path: "libNowPlayingPerlHelper.dylib"))

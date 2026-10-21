@@ -21,8 +21,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         super.init()
         window.title = "Stop Please! Settings"
         // Sized by the view, also when the Accessibility box appears or goes.
+        let logExport = LogExport(shortcuts: shortcuts, launchAtLogin: launchAtLogin)
         let hosting = NSHostingView(rootView: SettingsView(shortcuts: shortcuts, recorder: recorder,
-                                                           launchAtLogin: launchAtLogin))
+                                                           launchAtLogin: launchAtLogin, logExport: logExport))
         window.contentView = hosting
         // Sized now, so that the first `center()` uses the real size.
         window.setContentSize(hosting.fittingSize)
@@ -149,7 +150,7 @@ final class ShortcutRecorder {
             shortcuts.record(shortcut)
         }
         if let refusal {
-            logger.info("Refused key \(shortcut.keyCode) with \(shortcut.modifiers.symbols, privacy: .public): \(refusal, privacy: .public)")
+            logger.notice("Refused key \(shortcut.keyCode) with \(shortcut.modifiers.symbols, privacy: .public): \(refusal, privacy: .public)")
         }
         stop()
     }
@@ -159,26 +160,35 @@ private struct SettingsView: View {
     let shortcuts: ShortcutController
     let recorder: ShortcutRecorder
     let launchAtLogin: LaunchAtLogin
+    let logExport: LogExport
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    keyboardRow
-                    Divider()
-                    mediaKeyRow
-                }
-                .padding(8)
-            } label: {
-                Text("Shortcut").font(.headline)
+        VStack(alignment: .leading, spacing: 16) {
+            SettingsGroup(title: "General") {
+                Toggle("Launch at login", isOn: Binding(get: { launchAtLogin.isEnabled }, set: { launchAtLogin.set($0) }))
+                    .toggleStyle(.checkbox)
             }
-            Text("Only the chosen shortcut responds. Both recordings are kept.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Divider()
-                .padding(.vertical, 4)
-            Toggle("Launch at login", isOn: Binding(get: { launchAtLogin.isEnabled }, set: { launchAtLogin.set($0) }))
-                .toggleStyle(.checkbox)
+            VStack(alignment: .leading, spacing: 10) {
+                SettingsGroup(title: "Shortcut") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        keyboardRow
+                        Divider()
+                        mediaKeyRow
+                    }
+                }
+                Text("Only the chosen shortcut responds. Both recordings are kept.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            SettingsGroup(title: "Troubleshooting") {
+                HStack {
+                    Text("Save the recent log to attach to a bug report.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 12)
+                    Button("Export Log…") { logExport.export() }
+                        .disabled(logExport.isExporting)
+                }
+            }
         }
         .padding(20)
         .frame(width: 460)
@@ -273,6 +283,22 @@ private struct SettingsView: View {
     /// The modifiers held while recording, or `placeholder` before any.
     private func heldText(_ placeholder: String) -> String {
         recorder.held.isEmpty ? placeholder : recorder.held.symbols
+    }
+}
+
+/// A titled box, one per kind of setting.
+private struct SettingsGroup<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        GroupBox {
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+        } label: {
+            Text(title).font(.headline)
+        }
     }
 }
 

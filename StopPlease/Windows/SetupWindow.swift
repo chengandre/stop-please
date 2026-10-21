@@ -37,7 +37,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
     func showIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: Self.doneKey) else { return }
-        logger.info("Setup shown")
+        logger.notice("Setup shown")
         window.center()
         // Since macOS 14 `activate()` only succeeds when the app in front yields,
         // and nothing yields to a menu-bar app at launch, so the window would open
@@ -49,7 +49,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard !UserDefaults.standard.bool(forKey: Self.doneKey) else { return }
-        logger.info("Setup closed before Continue")
+        logger.notice("Setup closed before Continue")
         finish(.keyboard)
     }
 
@@ -64,7 +64,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
     private func finish(_ choice: ShortcutController.Choice) {
         UserDefaults.standard.set(true, forKey: Self.doneKey)
-        logger.info("Setup done: \(choice.rawValue, privacy: .public)")
+        logger.notice("Setup done: \(choice.rawValue, privacy: .public)")
         shortcuts.choose(choice)
     }
 }

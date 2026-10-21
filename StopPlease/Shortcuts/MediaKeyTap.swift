@@ -69,7 +69,7 @@ final class MediaKeyTap {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         self.tap = tap
         self.source = source
-        logger.info("Media-key tap created")
+        logger.notice("Media-key tap created")
         return true
     }
 
@@ -81,14 +81,14 @@ final class MediaKeyTap {
         self.tap = nil
         source = nil
         swallowingKeyUp = false
-        logger.info("Media-key tap removed")
+        logger.notice("Media-key tap removed")
     }
 
     /// True to swallow the event. Acts on key-down and ignores repeats.
     private func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             let byTimeout = type == .tapDisabledByTimeout
-            logger.info("Media-key tap disabled by \(byTimeout ? "timeout" : "user input", privacy: .public)")
+            logger.notice("Media-key tap disabled by \(byTimeout ? "timeout" : "user input", privacy: .public)")
             onDisabled(byTimeout)
             return false
         }

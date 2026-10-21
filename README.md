@@ -97,7 +97,9 @@ Open **Settings…** from the menu (⌘,) to choose between the two shortcuts an
 
 Only the chosen shortcut responds, and both recordings are kept. The ↺ button after each one restores its default (⌃⌥⌘P or Shift + Play/Pause).
 
-**Launch at login** starts Stop Please when you log in. It is off by default; once it is ticked, Stop Please appears in **System Settings → General → Login Items**, where it can also be switched off.
+**Launch at login** (under General) starts Stop Please when you log in. It is off by default; once it is ticked, Stop Please appears in **System Settings → General → Login Items**, where it can also be switched off.
+
+**Export Log…** (under Troubleshooting) saves Stop Please's recent log as a text file to attach to a bug report; see [Reporting a problem](#reporting-a-problem).
 
 <img src="assets/settings.png" width="572" alt="Stop Please! Settings: the keyboard shortcut ⌃⌥⌘P and the media-key shortcut ⇧ + Play/Pause, with the media key chosen and Accessibility granted">
 
@@ -172,7 +174,8 @@ StopPlease/                       Swift menu-bar app
 ├── App/
 │   ├── main.swift
 │   ├── AppDelegate.swift         startup and wiring
-│   └── LaunchAtLogin.swift       the login item
+│   ├── LaunchAtLogin.swift       the login item
+│   └── LogExport.swift           Export Log… for bug reports
 ├── NowPlaying/
 │   ├── HelperProtocol.swift      messages exchanged with the helper
 │   ├── HelperClient.swift        starts, supervises, and restarts the helper
@@ -234,6 +237,12 @@ If media keys or headphone buttons ever seem stuck on one app, quit and reopen S
 - **Apps with the same identity.** Some apps are signed with a generic identity; for example, several Electron apps can all appear as `Electron`. When two of them play at once, Stop Please refuses to control them rather than risk the wrong one.
 - **A relaunched app is not resumed.** Groups remember the app's process, so an app that quit after being paused is skipped.
 - **Groups are not saved** across quits.
+
+---
+
+## Reporting a problem
+
+[Open an issue](https://github.com/chengandre/stop-please/issues/new/choose) and say what happened; a sentence or two is enough. If you can, attach a log: right after the problem, open **Settings…** from the menu, click **Export Log…**, and drag the saved file into the issue. The log starts with the app and macOS versions and your shortcut settings, then lists what Stop Please did, with app names but never what you were playing. It is plain text, so you can read it first. macOS keeps these entries for hours to a few days, so export soon after the problem.
 
 ---
 

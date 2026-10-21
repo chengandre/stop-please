@@ -231,7 +231,7 @@ final class Coordinator {
         if groups.count > Self.maxGroups {
             groups.removeLast()
         }
-        logger.info("Saved a group of \(paused.count) sources; \(self.groups.count) groups saved")
+        logger.notice("Saved a group of \(paused.count) sources; \(self.groups.count) groups saved")
     }
 
     /// Play every source of `group`; the helper plays only those still Paused. The
@@ -258,7 +258,7 @@ final class Coordinator {
         if finished {
             groups.removeAll { $0.id == group.id }
         }
-        logger.info("Group \(finished ? "removed" : "kept for retry", privacy: .public); \(self.groups.count) groups saved")
+        logger.notice("Group \(finished ? "removed" : "kept for retry", privacy: .public); \(self.groups.count) groups saved")
     }
 
     /// Play the current source, as the Play/Pause key would with nothing saved.
@@ -358,6 +358,6 @@ final class Coordinator {
 
     private func log(_ action: String, _ results: [SourceID: TargetResult]) {
         let summary = results.map { "\($0.key.clientBundle)[\($0.key.pid)] \($0.value.outcome) \($0.value.state ?? "-")" }
-        logger.info("\(action, privacy: .public): \(summary.joined(separator: ", "), privacy: .public)")
+        logger.notice("\(action, privacy: .public): \(summary.joined(separator: ", "), privacy: .public)")
     }
 }

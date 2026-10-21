@@ -95,7 +95,7 @@ final class ShortcutController {
             pressed(mediaKeyName)
         }
         mediaKey.onDisabled = { [weak self] byTimeout in self?.tapDisabled(byTimeout: byTimeout) }
-        logger.info("Chosen \(self.choice.rawValue, privacy: .public): \(self.keyboardShortcut.name, privacy: .public), \(self.mediaKeyName, privacy: .public)")
+        logger.notice("Chosen \(self.choice.rawValue, privacy: .public): \(self.keyboardShortcut.name, privacy: .public), \(self.mediaKeyName, privacy: .public)")
         registerKeyboard()
         // A launch never asks for Accessibility: setup asks when it chooses the
         // media key, and later "Accessibility Needed…" does.
@@ -114,7 +114,7 @@ final class ShortcutController {
         guard newChoice != choice else { return }
         choice = newChoice
         UserDefaults.standard.set(newChoice.rawValue, forKey: "shortcut")
-        logger.info("Chosen \(newChoice.rawValue, privacy: .public)")
+        logger.notice("Chosen \(newChoice.rawValue, privacy: .public)")
         switch newChoice {
         case .mediaKey:
             recentTimeouts = []
@@ -134,7 +134,7 @@ final class ShortcutController {
     func beginRecording() {
         isRecording = true
         keyboard.unregister()
-        logger.info("Recording started")
+        logger.notice("Recording started")
     }
 
     func endRecording() {
@@ -142,7 +142,7 @@ final class ShortcutController {
         if !mediaKeyActive {
             registerKeyboard()
         }
-        logger.info("Recording ended")
+        logger.notice("Recording ended")
         onChange()
     }
 
@@ -151,7 +151,7 @@ final class ShortcutController {
         keyboardShortcut = shortcut
         UserDefaults.standard.set(shortcut.keyCode, forKey: "keyboardKeyCode")
         UserDefaults.standard.set(Int(shortcut.modifiers.rawValue), forKey: "keyboardModifiers")
-        logger.info("Recorded \(shortcut.name, privacy: .public)")
+        logger.notice("Recorded \(shortcut.name, privacy: .public)")
     }
 
     /// While recording.
@@ -159,7 +159,7 @@ final class ShortcutController {
         mediaKeyModifiers = modifiers
         mediaKey.modifiers = modifiers
         UserDefaults.standard.set(Int(modifiers.rawValue), forKey: "mediaKeyModifiers")
-        logger.info("Recorded \(self.mediaKeyName, privacy: .public)")
+        logger.notice("Recorded \(self.mediaKeyName, privacy: .public)")
     }
 
     /// Settings' reset buttons: forget a recording, so the default applies. A
@@ -168,7 +168,7 @@ final class ShortcutController {
         keyboardShortcut = .standard
         UserDefaults.standard.removeObject(forKey: "keyboardKeyCode")
         UserDefaults.standard.removeObject(forKey: "keyboardModifiers")
-        logger.info("Restored \(self.keyboardShortcut.name, privacy: .public)")
+        logger.notice("Restored \(self.keyboardShortcut.name, privacy: .public)")
         // `register` does nothing while the old combination is registered.
         if !mediaKeyActive {
             keyboard.unregister()
@@ -181,7 +181,7 @@ final class ShortcutController {
         mediaKeyModifiers = Self.standardMediaKeyModifiers
         mediaKey.modifiers = mediaKeyModifiers
         UserDefaults.standard.removeObject(forKey: "mediaKeyModifiers")
-        logger.info("Restored \(self.mediaKeyName, privacy: .public)")
+        logger.notice("Restored \(self.mediaKeyName, privacy: .public)")
         onChange()
     }
 
@@ -195,7 +195,7 @@ final class ShortcutController {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
         } else {
             askedThisRun = true
-            logger.info("Asking for Accessibility")
+            logger.notice("Asking for Accessibility")
             // The key is `kAXTrustedCheckOptionPrompt`, a global var Swift 6 rejects.
             _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
         }
@@ -203,10 +203,10 @@ final class ShortcutController {
 
     private func pressed(_ name: String) {
         guard !isRecording else {
-            logger.info("Pressed \(name, privacy: .public) while recording; ignored")
+            logger.notice("Pressed \(name, privacy: .public) while recording; ignored")
             return
         }
-        logger.info("Pressed \(name, privacy: .public)")
+        logger.notice("Pressed \(name, privacy: .public)")
         action()
     }
 
@@ -218,7 +218,7 @@ final class ShortcutController {
         grantObserver = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("com.apple.accessibility.api"), object: nil, queue: .main
         ) { [weak self] _ in
-            logger.info("Accessibility list changed")
+            logger.notice("Accessibility list changed")
             Task { @MainActor in
                 self?.recentTimeouts = []
                 self?.stoppedAfterTimeouts = false
@@ -265,7 +265,7 @@ final class ShortcutController {
         let permitted = MediaKeyTap.canCreateTap()
         if permitted != lastProbe {
             let milliseconds = Date().timeIntervalSince(started) * 1000
-            logger.info("Probe \(permitted ? "permitted" : "refused", privacy: .public) in \(milliseconds, format: .fixed(precision: 1)) ms")
+            logger.notice("Probe \(permitted ? "permitted" : "refused", privacy: .public) in \(milliseconds, format: .fixed(precision: 1)) ms")
             lastProbe = permitted
         }
         return permitted
@@ -296,7 +296,7 @@ final class ShortcutController {
         } else {
             registerKeyboard()
         }
-        logger.info("Active shortcut: \(active ? self.mediaKeyName : self.keyboardShortcut.name, privacy: .public)")
+        logger.notice("Active shortcut: \(active ? self.mediaKeyName : self.keyboardShortcut.name, privacy: .public)")
         onChange()
     }
 

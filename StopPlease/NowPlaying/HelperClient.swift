@@ -139,14 +139,14 @@ actor HelperClient {
         // so a `fatal` line is always handled before it.
         process.terminationHandler = { process in
             let how = process.terminationReason == .uncaughtSignal ? "signal" : "status"
-            logger.info("Helper \(process.processIdentifier) exited with \(how, privacy: .public) \(process.terminationStatus)")
+            logger.notice("Helper \(process.processIdentifier) exited with \(how, privacy: .public) \(process.terminationStatus)")
         }
         do {
             try process.run()
         } catch {
             return setState(.broken(reason: "Could not start the helper: \(error.localizedDescription)"))
         }
-        logger.info("Helper \(process.processIdentifier) started")
+        logger.notice("Helper \(process.processIdentifier) started")
         setState(.starting(input: input.fileHandleForWriting))
 
         Task {
@@ -198,7 +198,7 @@ actor HelperClient {
         switch message.event {
         case "ready":
             if case .starting(let input) = state {
-                logger.info("Helper ready")
+                logger.notice("Helper ready")
                 setState(.ready(input: input))
             }
         case "fatal":

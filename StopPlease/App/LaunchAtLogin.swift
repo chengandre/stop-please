@@ -16,7 +16,7 @@ final class LaunchAtLogin {
     func refresh() {
         let status = SMAppService.mainApp.status
         if status != self.status {
-            logger.info("Status \(status.name, privacy: .public)")
+            logger.notice("Status \(status.name, privacy: .public)")
         }
         self.status = status
     }
@@ -32,7 +32,7 @@ final class LaunchAtLogin {
                 try SMAppService.mainApp.unregister()
             }
             status = SMAppService.mainApp.status
-            logger.info("\(call, privacy: .public): status \(self.status.name, privacy: .public)")
+            logger.notice("\(call, privacy: .public): status \(self.status.name, privacy: .public)")
         } catch {
             status = SMAppService.mainApp.status
             logger.error("\(call, privacy: .public) failed: \(error.localizedDescription, privacy: .public); status \(self.status.name, privacy: .public)")

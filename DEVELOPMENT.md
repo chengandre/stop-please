@@ -129,13 +129,16 @@ Starts the helper bundled in a built app the same way the app does, checks that 
 The app logs to the unified log under the subsystem `com.andrecheng.StopPlease`:
 
 ```text
-/usr/bin/log stream --style compact --level info --predicate 'subsystem == "com.andrecheng.StopPlease"'
+/usr/bin/log stream --style compact --predicate 'subsystem == "com.andrecheng.StopPlease"'
 ```
 
-Use the full path: in zsh, `log` is a shell builtin.
+Use the full path: in zsh, `log` is a shell builtin. For past entries, use `log show --last 1h` (or `--last 1d`) with the same predicate.
+
+Entries are logged at `notice` and above, which macOS keeps on disk for hours to days depending on how busy the Mac is; `info` entries stay only in memory and can be gone within the hour. **Export Log…** in Settings saves the same entries with a header (versions, shortcut, Accessibility, launch at login) for bug reports.
 
 | Category | Logs |
 | -------- | ---- |
+| `app` | each launch with the app and macOS versions; log exports |
 | `helper` | helper start, ready, exit, and restart |
 | `coordinator` | one line per command with each app's outcome and state; groups saved, removed, or kept for retry |
 | `shortcut` | the chosen and active shortcut, each press, Accessibility changes, the media-key tap, recording, and setup |
