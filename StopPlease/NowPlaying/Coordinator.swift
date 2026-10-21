@@ -12,8 +12,8 @@ struct PausedSource {
     let titleAtPause: String?
 }
 
-/// The sources one Pause All paused (BUILD_GUIDE §10.2). It never changes after it
-/// is created: resuming either removes it or keeps it whole for a retry.
+/// The sources one Pause All paused. It never changes after it is created:
+/// resuming either removes it or keeps it whole for a retry.
 struct PausedGroup: Identifiable {
     let id = UUID()
     let pausedAt: Date
@@ -21,7 +21,7 @@ struct PausedGroup: Identifiable {
 }
 
 extension PausedGroup {
-    /// Group times are 24-hour whatever the locale (BUILD_GUIDE §10.3).
+    /// Group times are 24-hour whatever the locale.
     @MainActor private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -33,8 +33,8 @@ extension PausedGroup {
     @MainActor var timeText: String { Self.timeFormatter.string(from: pausedAt) }
 }
 
-/// What the confirmation pill shows after a group-level action (BUILD_GUIDE §10.10),
-/// e.g. "Resumed" with Spotify, and Zen dimmed because it didn't respond.
+/// What the confirmation pill shows after a group-level action, e.g. "Resumed"
+/// with Spotify, and Zen dimmed because it didn't respond.
 struct Confirmation {
     struct App {
         let appBundle: String?
@@ -64,9 +64,9 @@ struct RouteWarning {
 }
 
 /// Turns menu actions and shortcut presses into helper requests and keeps the
-/// groups of sources this app paused (BUILD_GUIDE §10.1, §10.2). A group holds
-/// only sources this app paused, so resuming never starts something that was
-/// already paused before Pause All.
+/// groups of sources this app paused. A group holds only sources this app
+/// paused, so resuming never starts something that was already paused before
+/// Pause All.
 @MainActor
 final class Coordinator {
     private static let maxGroups = 3
@@ -75,7 +75,7 @@ final class Coordinator {
     /// Called after every change the menu shows.
     var onChange: () -> Void = {}
     /// Called by a shortcut press with nothing playing and several groups saved.
-    /// The chooser resumes the picked one through `resume(groupID:)` (BUILD_GUIDE §10.5).
+    /// The chooser resumes the picked one through `resume(groupID:)`.
     var onChooseGroup: () -> Void = {}
     /// Called after every group-level action: Pause All, a group resume, and every
     /// shortcut press except one that opens the chooser. Not after a row click.
@@ -126,7 +126,7 @@ final class Coordinator {
     }
 
     /// A click on a Now Playing row: pause it if Playing, play it if Paused. It
-    /// never creates or changes a group (BUILD_GUIDE §10.3).
+    /// never creates or changes a group.
     func playOrPause(_ id: SourceID) async {
         await perform {
             guard let source = sources.first(where: { $0.id == id }) else { return }
@@ -145,10 +145,10 @@ final class Coordinator {
         }
     }
 
-    /// The shortcut (BUILD_GUIDE §10.1): pause whatever is playing; otherwise resume
-    /// the only group, or open the chooser for several; otherwise do what the
-    /// Play/Pause key would. The shortcut has already swallowed the press, so the
-    /// last case is handled here.
+    /// The shortcut: pause whatever is playing; otherwise resume the only group,
+    /// or open the chooser for several; otherwise do what the Play/Pause key
+    /// would. The shortcut has already swallowed the press, so the last case is
+    /// handled here.
     func shortcutPressed() async {
         await perform {
             let current: SourceID?
@@ -307,9 +307,9 @@ final class Coordinator {
     /// List, and return the current source.
     ///
     /// An empty list while apps in saved groups are still running is the sign that
-    /// macOS closed the read access (BUILD_GUIDE §5). It is only a warning: an app
-    /// can also leave Now Playing while running, e.g. when the browser tab that was
-    /// paused is closed.
+    /// macOS closed the read access. It is only a warning: an app can also leave
+    /// Now Playing while running, e.g. when the browser tab that was paused is
+    /// closed.
     @discardableResult
     private func updateSources() async throws -> SourceID? {
         let list = try await helper.list()

@@ -44,8 +44,8 @@ enum CommandAction: String, Encodable, Sendable {
 ///
 ///     {"pid": 1334, "outcome": "done", "route": "override", "state": "Paused"}
 ///
-/// `route` is not decoded: whether anything was sent follows from `outcome` alone
-/// (BUILD_GUIDE §3.2).
+/// `route` is not decoded: it is also present on `overrideNotHonored`, where
+/// nothing was sent, so whether anything was sent follows from `outcome` alone.
 struct TargetResult: Decodable, Sendable {
     enum Outcome: String, Decodable, Sendable {
         case done, skipped, notFound, ambiguousBundle, overrideNotHonored, noStateChange

@@ -1,8 +1,8 @@
 import AppKit
 
-/// The status item and its menu (BUILD_GUIDE §10.3). Opening the menu shows the
-/// last known state at once and refreshes the list; the menu is rebuilt whenever
-/// the coordinator changes, also while it is open.
+/// The status item and its menu. Opening the menu shows the last known state at
+/// once and refreshes the list; the menu is rebuilt whenever the coordinator
+/// changes, also while it is open.
 ///
 /// Text on the right edge is drawn by AppKit so that it lines up with ⌘Q: states
 /// and "Resume" are badges, the shortcut is a key equivalent.
@@ -182,7 +182,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// "Spotify — To My Youth", with long titles shortened.
+    /// "Spotify — Song Title", with long titles shortened.
     private func label(_ name: String, _ title: String?) -> String {
         guard let title, !title.isEmpty else { return name }
         return "\(name) — \(shorten(title))"

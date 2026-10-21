@@ -2,11 +2,10 @@ import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 
-/// The floating panel a shortcut press opens when several groups are saved
-/// (BUILD_GUIDE §10.5): mockups C1–C3 with a small app title instead of the
-/// header, sized and selected, with larger icons. The newest group starts selected. ↑/↓ move,
-/// Tab and ⇧Tab cycle, Enter or a click resumes, and Esc, a click outside, or
-/// opening the menu dismisses it without changes.
+/// The floating panel a shortcut press opens when several groups are saved: a
+/// small app title, then one row per group. The newest group starts selected.
+/// ↑/↓ move, Tab and ⇧Tab cycle, Enter or a click resumes, and Esc, a click
+/// outside, or opening the menu dismisses it without changes.
 ///
 /// The panel takes keys without activating the app, so the app the user was in
 /// stays in front and gets the keys back when the panel closes.

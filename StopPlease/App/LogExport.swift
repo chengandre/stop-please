@@ -4,23 +4,23 @@ import OSLog
 
 private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "app")
 
-/// "Export Log…" in Settings (BUILD_GUIDE §12): the app's entries from the system
-/// log, after a header written at export time, saved as a text file to attach to
-/// a bug report. The entries are `notice` and above, which macOS keeps on disk
-/// for hours to days depending on how busy the Mac is; `info` lines stay only in
+/// "Export Log…" in Settings: the app's entries from the system log, after a
+/// header written at export time, saved as a text file to attach to a bug
+/// report. The entries are `notice` and above, which macOS keeps on disk for
+/// hours to days depending on how busy the Mac is; `info` lines stay only in
 /// memory and were seen gone within the hour.
 ///
 /// A file looks like:
 ///
 ///     Stop Please 0.1 (1)
-///     macOS Version 15.8 (Build 24H23)
-///     Exported 2026-10-21 01:10:05 +0200
+///     macOS Version 15.5 (Build 24F74)
+///     Exported 2026-01-15 14:03:12 +0000
 ///     Shortcut: media key (⇧ Play/Pause, active); keyboard ⌃⌥⌘P
 ///     Accessibility: granted
 ///     Launch at login: on
-///     42 entries since 2026-10-20 07:21:04
+///     42 entries since 2026-01-14 09:12:40
 ///
-///     2026-10-21 00:19:36.391  notice  login  Register: status enabled
+///     2026-01-14 09:12:40.118  notice  login  Register: status enabled
 @MainActor @Observable
 final class LogExport {
     /// "0.1 (1)": the version and the build number.
@@ -29,7 +29,7 @@ final class LogExport {
         return "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
     }
 
-    /// "Version 15.8 (Build 24H23)".
+    /// "Version 15.5 (Build 24F74)".
     static var macOSVersion: String { ProcessInfo.processInfo.operatingSystemVersionString }
 
     /// The system log may hold less; this only bounds the read.

@@ -3,7 +3,7 @@ import ServiceManagement
 
 private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "login")
 
-/// "Launch at login" in Settings (BUILD_GUIDE §12): the app as its own login item
+/// "Launch at login" in Settings: the app as its own login item
 /// through `SMAppService.mainApp`, listed in System Settings → General → Login
 /// Items. macOS holds the state rather than user defaults, because the user can
 /// also switch it there; Settings reads it again whenever it becomes key.

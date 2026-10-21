@@ -5,9 +5,9 @@ import SwiftUI
 
 private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "shortcut")
 
-/// "Stop Please! Settings" (BUILD_GUIDE §10.4, mockups S1–S6; §12): launch at
-/// login, which shortcut is chosen, and a recorder for each. Opening it activates
-/// the app so that the window can take keys; it has no Dock icon either way.
+/// "Stop Please! Settings": launch at login, which shortcut is chosen and a
+/// recorder for each, and Export Log…. Opening it activates the app so that the
+/// window can take keys; it has no Dock icon either way.
 @MainActor
 final class SettingsWindow: NSObject, NSWindowDelegate {
     private let window: NSWindow

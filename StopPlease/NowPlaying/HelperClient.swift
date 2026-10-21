@@ -5,16 +5,16 @@ private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "h
 
 enum HelperError: Error {
     /// The helper answered `{"ok": false}`: `timeout`, `mediaRemoteError`, or
-    /// `badRequest` (BUILD_GUIDE §3.2). A failed `command` sent nothing.
+    /// `badRequest`. A failed `command` sent nothing.
     case failed(code: String, message: String)
     /// The helper exited before replying; a new one is already starting.
     case helperExited
-    /// The route is gone (BUILD_GUIDE §5). Every request fails until the app relaunches.
+    /// The route is gone. Every request fails until the app relaunches.
     case routeBroken(reason: String)
 }
 
 /// Owns the one long-running helper, `/usr/bin/perl perl_helper.pl <library>`,
-/// spoken to with one JSON line per request and per reply (BUILD_GUIDE §3, §6.2).
+/// spoken to with one JSON line per request and per reply.
 ///
 /// The helper is restarted as soon as it exits, not on the next request: a crash
 /// inside an override window keeps media keys on the command's target until a new
@@ -227,7 +227,7 @@ actor HelperClient {
     }
 }
 
-// Wire formats (BUILD_GUIDE §3.2).
+// Wire formats, as `perl_helper.m` writes them.
 
 private struct Request: Encodable {
     var id = 0

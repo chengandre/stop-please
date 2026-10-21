@@ -19,6 +19,7 @@ So I built Stop Please. With a single shortcut, **Shift + Play/Pause**, it pause
 - Keeps up to three groups; when there are several, a chooser picks which one to resume
 - Lists every Now Playing source in the menu; click one to pause or play just that app
 - Works with the apps as installed: no plugins, no per-app setup, nothing injected into them
+- Lightweight: about 35 MB of memory, practically no CPU while idle, and a download under 0.5 MB. No network access and no analytics
 
 ---
 

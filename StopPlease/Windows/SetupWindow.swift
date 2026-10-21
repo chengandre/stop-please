@@ -4,9 +4,9 @@ import SwiftUI
 
 private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "shortcut")
 
-/// First-launch setup (BUILD_GUIDE §10.4, mockups F1–F3): choose the media-key
-/// shortcut or the keyboard shortcut, each shown as recorded. Shown at launch
-/// until the `setupDone` user default is set.
+/// First-launch setup: choose the media-key shortcut or the keyboard shortcut,
+/// each shown as recorded. Shown at launch until the `setupDone` user default is
+/// set.
 ///
 /// Continue with the keyboard closes the window. Continue with the media key
 /// asks for Accessibility and waits in the window until the grant arrives; the
@@ -41,8 +41,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         window.center()
         // Since macOS 14 `activate()` only succeeds when the app in front yields,
         // and nothing yields to a menu-bar app at launch, so the window would open
-        // behind that app. The deprecated form still brings it forward on macOS
-        // 15.8 (PERL_HELPER.md, "Setup gate").
+        // behind that app. The deprecated form still brings it forward and makes
+        // it key, at least on macOS 15.
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
@@ -71,9 +71,9 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
 @MainActor @Observable
 private final class SetupState {
-    /// The media key is selected first (F1).
+    /// The media key is selected first.
     var selection: ShortcutController.Choice = .mediaKey
-    /// After Continue with the media key: waiting for the grant, or granted (F2, F3).
+    /// After Continue with the media key: waiting for the grant, or granted.
     var waiting = false
 }
 
@@ -85,7 +85,6 @@ private struct SetupView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // A placeholder until the app has an icon.
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 64, height: 64)

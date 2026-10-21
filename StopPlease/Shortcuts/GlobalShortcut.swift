@@ -25,8 +25,8 @@ extension NSEvent.ModifierFlags {
     }
 }
 
-/// The keyboard shortcut (BUILD_GUIDE §10.4): a virtual key code and ⌃⌥⇧⌘. Saved
-/// as a key code, so its name follows the keyboard layout.
+/// The keyboard shortcut: a virtual key code and ⌃⌥⇧⌘. Saved as a key code, so
+/// its name follows the keyboard layout.
 struct KeyboardShortcut: Equatable {
     static let standard = KeyboardShortcut(keyCode: kVK_ANSI_P, modifiers: [.control, .option, .command])
     /// A recorded shortcut needs at least one of these, so that it cannot take
@@ -97,13 +97,13 @@ struct KeyboardShortcut: Equatable {
     }
 }
 
-/// The keyboard shortcut system-wide (BUILD_GUIDE §6.5, §10.1). Carbon hot keys
-/// need no Accessibility or Input Monitoring permission.
+/// The keyboard shortcut system-wide. Carbon hot keys need no Accessibility or
+/// Input Monitoring permission.
 ///
-/// Registered shared, as the common shortcut libraries do: if another app has the
-/// same combination, both get the press. Only exclusive registrations can refuse
-/// each other, and hardly any app makes one, so a conflict is not detected
-/// (BUILD_GUIDE §10.4; PERL_HELPER.md, "Settings gate").
+/// Registered shared, as KeyboardShortcuts, MASShortcut, HotKey, and Magnet do:
+/// if another app has the same combination, both get the press. Only two
+/// exclusive registrations refuse each other, and hardly any app makes one, so
+/// a conflict is not detected.
 @MainActor
 final class GlobalShortcut {
     var action: () -> Void = {}

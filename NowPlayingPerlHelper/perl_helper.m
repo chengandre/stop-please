@@ -6,8 +6,9 @@
 // process receives the full Now Playing list. Its targeted commands are still redirected
 // to the current Now Playing player, which is why commands use the override.
 //
-// Contracts below were read from the arm64e disassembly of the installed
-// MediaRemote on macOS 15.8 (24H23); see docs/PERL_HELPER.md.
+// The private MediaRemote contracts below were read from the arm64e disassembly
+// of MediaRemote on macOS 15. Apple does not document them, and any update can
+// change them.
 typedef void (*GetClientsFn)(dispatch_queue_t, void (^)(NSArray *clients, NSError *error));
 typedef void (*GetClientFn)(dispatch_queue_t, void (^)(id client, NSError *error));
 typedef id (*GetLocalOriginFn)(void);
@@ -385,7 +386,7 @@ static NSDictionary *handleRequest(NSData *line) {
 /// time on this thread. Returns when stdin closes.
 static void runServe(void) {
     // A crash inside an earlier helper's override window leaves the override set, and a
-    // nil from this new process does not clear it (docs/PERL_HELPER.md). Setting and
+    // nil from this new process does not clear it (seen in testing). Setting and
     // clearing it from one process does; the leftover target is the current client.
     id current = nil;
     if (currentClient(&current) && current) {

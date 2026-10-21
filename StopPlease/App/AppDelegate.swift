@@ -25,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let icons = AppIconCache()
         let chooser = GroupChooser(icons: icons)
         let shortcuts = ShortcutController {
-            // A press while the chooser is open is ignored (BUILD_GUIDE §10.5).
+            // A press while the chooser is open is ignored.
             guard !chooser.isOpen else { return }
             Task { await coordinator.shortcutPressed() }
         }

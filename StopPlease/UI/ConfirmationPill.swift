@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 
 /// The translucent pill near the bottom center of the screen with the mouse pointer
-/// after every group-level action (BUILD_GUIDE §10.10, mockups H1–H5): app icons
-/// and one word, sized like the chooser. It fades after about 1.5 s, never takes
-/// focus, and lets clicks through. A new action replaces it and restarts the timer.
+/// after every group-level action: app icons and one word, sized like the
+/// chooser. It fades after about 1.5 s, never takes focus, and lets clicks
+/// through. A new action replaces it and restarts the timer.
 @MainActor
 final class ConfirmationPill {
     private static let height: CGFloat = 66
@@ -45,7 +45,7 @@ final class ConfirmationPill {
     func show(_ confirmation: Confirmation) {
         hosting.rootView = PillView(confirmation: confirmation, icons: icons)
         let width = hosting.fittingSize.width
-        // Above the Dock, at about the height the mockups show it.
+        // Centered, 12% of the way up the visible frame, which already excludes the Dock.
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main!
         let visible = screen.visibleFrame
@@ -86,7 +86,7 @@ private struct PillView: View {
         HStack(spacing: 15) {
             HStack(spacing: 6) {
                 if confirmation.apps.isEmpty {
-                    // Nothing changed or nothing was sent (H5).
+                    // Nothing changed or nothing was sent.
                     Image(systemName: "pause.circle")
                         .font(.system(size: 39))
                         .foregroundStyle(.secondary)

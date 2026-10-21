@@ -1,10 +1,10 @@
-"""Run the acceptance tests (Tests H, E, F, and optionally G in docs/PERL_HELPER.md)
+"""Run the acceptance tests (Tests H, E, F, and optionally G; see DEVELOPMENT.md)
 through one long-running Perl-hosted helper, against the three fixture apps.
 
 Every request and reply is saved under Outputs/ACCEPTANCE_<timestamp>/ with a
-summary. States are MediaRemote-reported; audible/foreground behavior still
-needs the user's observation. Test G quits YouTube Music, so it runs only with
---test-g.
+summary. States are MediaRemote-reported; whether you heard each change, and
+which app came to the front, is up to you. Test G quits YouTube Music, so it
+runs only with --test-g.
 """
 import argparse
 import datetime

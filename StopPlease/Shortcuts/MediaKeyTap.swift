@@ -4,9 +4,9 @@ import os
 private let logger = Logger(subsystem: "com.andrecheng.StopPlease", category: "shortcut")
 
 /// An active event tap that swallows Play/Pause pressed with exactly `modifiers`
-/// and runs `action` instead (BUILD_GUIDE §10.4). Every other press, plain
-/// Play/Pause included, passes on to the player. Needs Accessibility: without it
-/// the tap cannot be created (PERL_HELPER.md, "Event-tap spike").
+/// and runs `action` instead. Every other press, plain Play/Pause included,
+/// passes on to the player. Needs Accessibility: without it the tap cannot be
+/// created.
 @MainActor
 final class MediaKeyTap {
     /// `NX_SUBTYPE_AUX_CONTROL_BUTTONS`: media keys.
@@ -18,8 +18,8 @@ final class MediaKeyTap {
     var modifiers: NSEvent.ModifierFlags
     var action: () -> Void = {}
     /// Called when macOS turned the tap off; true for a timeout. The tap is left
-    /// off: turning it back on after a revoke froze every click (PERL_HELPER.md,
-    /// "Media-key gate").
+    /// off: after a revoke, turning it back on makes macOS hold every click again
+    /// until the next timeout, about 5 s each time.
     var onDisabled: (_ byTimeout: Bool) -> Void = { _ in }
 
     private var tap: CFMachPort?
@@ -34,10 +34,9 @@ final class MediaKeyTap {
 
     /// Whether macOS still lets this process create an active tap, which it does
     /// only with Accessibility. Decided afresh each time, unlike
-    /// `AXIsProcessTrusted`, whose cache a revoke can leave stale (AltTab,
-    /// `src/macos/SystemPermissions.swift`). The probe asks for no events and is
-    /// never added to a run loop, so no event passes through it or waits on it
-    /// (hops, `crates/input-event/src/accessibility.rs`).
+    /// `AXIsProcessTrusted`, whose cache a revoke can leave stale (AltTab). The
+    /// probe asks for no events and is never added to a run loop, so no event
+    /// passes through it or waits on it (hops).
     static func canCreateTap() -> Bool {
         guard let probe = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .defaultTap,
