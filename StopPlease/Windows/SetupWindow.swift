@@ -85,7 +85,9 @@ private struct SetupView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(nsImage: NSApp.applicationIconImage)
+            // Not NSApp.applicationIconImage: the bundle icon has only the dark
+            // look, while this asset-catalog copy follows the system appearance.
+            Image("SetupIcon")
                 .resizable()
                 .frame(width: 64, height: 64)
             VStack(spacing: 4) {
