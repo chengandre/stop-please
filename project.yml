@@ -10,7 +10,6 @@ configFiles:
   Release: Signing.xcconfig
 settings:
   base:
-    ARCHS: arm64
     CODE_SIGN_STYLE: Manual
     ENABLE_HARDENED_RUNTIME: YES
 targets:

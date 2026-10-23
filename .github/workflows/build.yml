@@ -169,6 +169,15 @@ jobs:
           test -f "$APP/Contents/Frameworks/libNowPlayingPerlHelper.dylib"
           test -f "$APP/Contents/Resources/perl_helper.pl"
 
+          # Every build runs on Intel and Apple silicon Macs. /usr/bin/perl loads the
+          # helper's slice that matches its own, so the dylib needs both slices too.
+          for CODE in "$APP/Contents/MacOS/StopPlease" "$APP/Contents/Frameworks/libNowPlayingPerlHelper.dylib"; do
+            if ! lipo "$CODE" -verify_arch x86_64 arm64; then
+              echo "::error::$CODE is not universal: $(lipo -archs "$CODE")"
+              exit 1
+            fi
+          done
+
           BUILT_VERSION="$(/usr/libexec/PlistBuddy \
             -c "Print CFBundleShortVersionString" \
             "$APP/Contents/Info.plist")"
@@ -247,7 +256,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, macos-26]
+        # macos-15-intel is GitHub's last Intel image.
+        os: [macos-15, macos-15-intel, macos-26]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
 

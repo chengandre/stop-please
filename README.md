@@ -20,13 +20,13 @@ So I built Stop Please. With a single shortcut, **Shift + Play/Pause**, it pause
 - Keeps up to three groups; when there are several, a chooser picks which one to resume
 - Lists every Now Playing source in the menu; click one to pause or play just that app
 - Works with the apps as installed: no plugins, no per-app setup, nothing injected into them
-- Lightweight: about 35 MB of memory, practically no CPU while idle, and a download under 0.5 MB. No network access and no analytics
+- Lightweight: about 35 MB of memory, practically no CPU while idle, and a download of about 1 MB. No network access and no analytics
 
 ---
 
 ## Installation
 
-Requires a Mac with Apple silicon and macOS 15 or later.
+Requires macOS 15 or later, on Apple silicon or Intel.
 
 1. Install with Homebrew, `brew install --cask chengandre/tap/stop-please`, or download `StopPlease-<version>.dmg` from [Releases](https://github.com/chengandre/stop-please/releases) and drag **Stop Please!** to **Applications**.
 2. Open the app. It is not notarized, so macOS blocks the first launch: open **System Settings → Privacy & Security**, click **Open Anyway** next to the message about Stop Please, and confirm.
