@@ -28,9 +28,8 @@ So I built Stop Please. With a single shortcut, **Shift + Play/Pause**, it pause
 
 Requires a Mac with Apple silicon and macOS 15 or later.
 
-1. Download `StopPlease-<version>.dmg` (or the `.zip`) from [Releases](https://github.com/chengandre/stop-please/releases).
-2. Open it and drag **Stop Please!** to **Applications**.
-3. Open the app. It is not notarized, so macOS blocks the first launch: open **System Settings → Privacy & Security**, click **Open Anyway** next to the message about Stop Please, and confirm.
+1. Install with Homebrew, `brew install --cask chengandre/tap/stop-please`, or download `StopPlease-<version>.dmg` from [Releases](https://github.com/chengandre/stop-please/releases) and drag **Stop Please!** to **Applications**.
+2. Open the app. It is not notarized, so macOS blocks the first launch: open **System Settings → Privacy & Security**, click **Open Anyway** next to the message about Stop Please, and confirm.
 
 Stop Please lives in the menu bar and has no Dock icon. To build from source, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
@@ -121,11 +120,11 @@ No other permissions are requested: no Input Monitoring, no Automation, no scree
 
 ## Updating and uninstalling
 
-To update, quit Stop Please and replace the app in **Applications** with the new one.
+To update, quit Stop Please and replace the app in **Applications** with the new one. With Homebrew, run `brew upgrade --cask stop-please`.
 
 Every release is signed with the same certificate, so the Accessibility permission carries over to the new version.
 
-To uninstall, quit Stop Please, delete it from **Applications**, and remove it from the Accessibility list if it is there.
+To uninstall, quit Stop Please, delete it from **Applications**, and remove it from the Accessibility list if it is there. With Homebrew, `brew uninstall --zap stop-please` removes the app and its preferences; remove it from the Accessibility list yourself.
 
 ---
 
